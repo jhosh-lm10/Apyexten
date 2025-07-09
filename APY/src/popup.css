@@ -1,0 +1,16 @@
+/* Styles for ReactQuill editor to match extension colors */
+.ql-toolbar {
+  background: #fff;
+  border: 1px solid #b30000;
+  border-bottom: none;
+}
+
+.ql-container {
+  border: 1px solid #b30000;
+  border-top: none;
+  min-height: 60px;
+}
+
+.ql-editor {
+  font-family: Arial, sans-serif;
+}
