@@ -1,0 +1,25 @@
+{
+    "manifest_version": 3,
+    "name": "Apysky",
+    "description": "Extensión para envío masivo con funciones avanzadas para WhatsApp Web",
+    "version": "1.0",
+    "permissions": ["scripting", "storage"],
+    "host_permissions": ["https://web.whatsapp.com/*"],
+    "background": {
+      "service_worker": "background.js"
+    },
+    "action": {
+      "default_popup": "index.html"
+    },
+    "content_scripts": [
+      {
+        "matches": ["https://web.whatsapp.com/*"],
+        "js": ["contentScript.js"]
+      }
+    ],
+    "icons": {
+      "16": "assets/icon.png",
+      "48": "assets/icon.png",
+      "128": "assets/icon.png"
+    }
+  }
