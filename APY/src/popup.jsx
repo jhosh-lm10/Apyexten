@@ -1,41 +1,43 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import ReactQuill from 'react-quill';
 import 'react-quill/dist/quill.snow.css';
 import 'react-datepicker/dist/react-datepicker.css';
 import DatePicker from 'react-datepicker';
 import './popup.css';
 
-// Utilidad para formatear fechas
-const formatDateTime = (date) => {
-  return date.toLocaleString('es-ES', {
+/* ------------------------------------------------------------------
+  UTILIDADES
+-------------------------------------------------------------------*/
+const formatDateTime = (date) =>
+  date.toLocaleString('es-ES', {
     day: '2-digit',
     month: '2-digit',
     year: 'numeric',
     hour: '2-digit',
-    minute: '2-digit'
+    minute: '2-digit',
   });
-};
 
-// Utilidad para calcular el tiempo restante
 const getTimeRemaining = (scheduledTime) => {
   const now = new Date();
   const diff = scheduledTime - now;
-  
+
   if (diff <= 0) return '¡Ahora!';
-  
+
   const days = Math.floor(diff / (1000 * 60 * 60 * 24));
   const hours = Math.floor((diff / (1000 * 60 * 60)) % 24);
   const minutes = Math.floor((diff / 1000 / 60) % 60);
-  
+
   const parts = [];
   if (days > 0) parts.push(`${days}d`);
   if (hours > 0) parts.push(`${hours}h`);
   if (minutes > 0 || parts.length === 0) parts.push(`${minutes}m`);
-  
+
   return `En ${parts.join(' ')}`;
 };
 
-// Componente Modal para crear/editar plantillas
+/* ------------------------------------------------------------------
+  MODAL PLANTILLAS
+-------------------------------------------------------------------*/
 const TemplateModal = ({ isOpen, onClose, onSave, template = null }) => {
   const [name, setName] = useState(template?.name || '');
   const [content, setContent] = useState(template?.content || '');
@@ -53,34 +55,41 @@ const TemplateModal = ({ isOpen, onClose, onSave, template = null }) => {
   if (!isOpen) return null;
 
   return (
-    <div style={{
-      position: 'fixed',
-      top: 0,
-      left: 0,
-      right: 0,
-      bottom: 0,
-      backgroundColor: 'rgba(0,0,0,0.5)',
-      display: 'flex',
-      justifyContent: 'center',
-      alignItems: 'center',
-      zIndex: 1000
-    }}>
-      <div style={{
-        backgroundColor: 'white',
-        padding: '20px',
-        borderRadius: '8px',
-        width: '90%',
-        maxWidth: '600px',
-        maxHeight: '90vh',
+    <div
+      style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundColor: 'rgba(0,0,0,0.5)',
         display: 'flex',
-        flexDirection: 'column'
-      }}>
+        justifyContent: 'center',
+        alignItems: 'center',
+        zIndex: 1000,
+      }}
+    >
+      <div
+        style={{
+          backgroundColor: 'white',
+          padding: '20px',
+          borderRadius: '8px',
+          width: '90%',
+          maxWidth: '600px',
+          maxHeight: '90vh',
+          display: 'flex',
+          flexDirection: 'column',
+        }}
+      >
         <h3 style={{ marginTop: 0, color: '#b30000' }}>
           {template ? 'Editar Plantilla' : 'Nueva Plantilla'}
         </h3>
-        
+
+        {/* Nombre */}
         <div style={{ marginBottom: '15px' }}>
-          <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>
+          <label
+            style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}
+          >
             Nombre de la plantilla:
           </label>
           <input
@@ -92,39 +101,44 @@ const TemplateModal = ({ isOpen, onClose, onSave, template = null }) => {
               padding: '8px',
               border: '1px solid #ddd',
               borderRadius: '4px',
-              boxSizing: 'border-box'
+              boxSizing: 'border-box',
             }}
             placeholder="Ej: Recordatorio de pago"
           />
         </div>
-        
+
+        {/* Contenido */}
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', marginBottom: '15px' }}>
           <label style={{ marginBottom: '5px', fontWeight: 'bold' }}>Contenido:</label>
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-            <ReactQuill
-              theme="snow"
-              value={content}
-              onChange={setContent}
-              style={{ flex: 1, display: 'flex', flexDirection: 'column' }}
-              modules={{
-                toolbar: [
-                  [{ 'header': [1, 2, 3, false] }],
-                  ['bold', 'italic', 'underline', 'strike'],
-                  [{ 'list': 'ordered'}, { 'list': 'bullet' }],
-                  ['link', 'image'],
-                  ['clean']
-                ]
-              }}
-              formats={[
-                'header',
-                'bold', 'italic', 'underline', 'strike',
-                'list', 'bullet',
-                'link', 'image'
-              ]}
-            />
-          </div>
+          <ReactQuill
+            theme="snow"
+            value={content}
+            onChange={setContent}
+            style={{ flex: 1, display: 'flex', flexDirection: 'column' }}
+            modules={{
+              toolbar: [
+                [{ header: [1, 2, 3, false] }],
+                ['bold', 'italic', 'underline', 'strike'],
+                [{ list: 'ordered' }, { list: 'bullet' }],
+                ['link', 'image'],
+                ['clean'],
+              ],
+            }}
+            formats={[
+              'header',
+              'bold',
+              'italic',
+              'underline',
+              'strike',
+              'list',
+              'bullet',
+              'link',
+              'image',
+            ]}
+          />
         </div>
-        
+
+        {/* Acciones */}
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
           <button
             onClick={onClose}
@@ -133,7 +147,7 @@ const TemplateModal = ({ isOpen, onClose, onSave, template = null }) => {
               backgroundColor: '#f0f0f0',
               border: '1px solid #ccc',
               borderRadius: '4px',
-              cursor: 'pointer'
+              cursor: 'pointer',
             }}
           >
             Cancelar
@@ -143,11 +157,13 @@ const TemplateModal = ({ isOpen, onClose, onSave, template = null }) => {
             disabled={!name.trim() || !content.trim()}
             style={{
               padding: '8px 16px',
-              backgroundColor: !name.trim() || !content.trim() ? '#ccc' : '#b30000',
+              backgroundColor:
+                !name.trim() || !content.trim() ? '#ccc' : '#b30000',
               color: 'white',
               border: 'none',
               borderRadius: '4px',
-              cursor: !name.trim() || !content.trim() ? 'not-allowed' : 'pointer'
+              cursor:
+                !name.trim() || !content.trim() ? 'not-allowed' : 'pointer',
             }}
           >
             {template ? 'Actualizar' : 'Guardar'} Plantilla
@@ -158,7 +174,9 @@ const TemplateModal = ({ isOpen, onClose, onSave, template = null }) => {
   );
 };
 
-// Estilos personalizados para el editor
+/* ------------------------------------------------------------------
+  ESTILOS QUILL (inline para no depender de archivo externo)
+-------------------------------------------------------------------*/
 const customStyles = `
   .ql-toolbar.ql-snow {
     border: 1px solid #b30000 !important;
@@ -173,7 +191,8 @@ const customStyles = `
   .ql-editor {
     min-height: 150px;
   }
-  .ql-toolbar button:hover, .ql-toolbar button.ql-active {
+  .ql-toolbar button:hover,
+  .ql-toolbar button.ql-active {
     color: #b30000 !important;
   }
   .ql-toolbar button.ql-active .ql-stroke {
@@ -183,308 +202,437 @@ const customStyles = `
     fill: #b30000 !important;
   }
 `;
+
+/* ------------------------------------------------------------------
+  COMPONENTE PRINCIPAL
+-------------------------------------------------------------------*/
 function Popup() {
+  /* --------------------
+     ESTADOS CONEXIÓN WA
+  ---------------------*/
+  const [connectionStatus, setConnectionStatus] = useState({
+    isConnected: false,
+    isLoading: true,
+    error: null,
+    whatsAppTab: null,
+  });
+
+  /* --------------------
+     ESTADOS ENVÍO
+  ---------------------*/
   const [numbers, setNumbers] = useState('');
   const [message, setMessage] = useState('');
+  const [isSending, setIsSending] = useState(false);
+  const [sendStatus, setSendStatus] = useState({ success: null, message: '' });
+
+  /* --------------------
+     PLANTILLAS
+  ---------------------*/
   const [templates, setTemplates] = useState([]);
   const [showTemplates, setShowTemplates] = useState(false);
   const [showTemplateModal, setShowTemplateModal] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState(null);
   const [previewTemplate, setPreviewTemplate] = useState(null);
+
+  /* --------------------
+     IMPORT / EXPORT
+  ---------------------*/
   const [importExportOpen, setImportExportOpen] = useState(false);
   const [importData, setImportData] = useState('');
+
+  /* --------------------
+     PROGRAMADOS
+  ---------------------*/
   const [scheduledMessages, setScheduledMessages] = useState([]);
   const [scheduleDate, setScheduleDate] = useState(() => {
     const date = new Date();
-    date.setMinutes(date.getMinutes() + 5); // Por defecto, 5 minutos en el futuro
+    date.setMinutes(date.getMinutes() + 5);
     return date;
   });
   const [showScheduled, setShowScheduled] = useState(false);
 
-  // Configuración mejorada del editor
-  const modules = useMemo(() => ({
-    toolbar: [
-      [{ 'header': [1, 2, 3, false] }],
-      ['bold', 'italic', 'underline', 'strike'],
-      [{ 'list': 'ordered'}, { 'list': 'bullet' }],
-      ['link', 'image'],
-      ['clean']
-    ]
-  }), []);
+  /* --------------------
+     CONFIG EDITOR
+  ---------------------*/
+  const modules = useMemo(
+    () => ({
+      toolbar: [
+        [{ header: [1, 2, 3, false] }],
+        ['bold', 'italic', 'underline', 'strike'],
+        [{ list: 'ordered' }, { list: 'bullet' }],
+        ['link', 'image'],
+        ['clean'],
+      ],
+    }),
+    []
+  );
 
   const formats = [
     'header',
-    'bold', 'italic', 'underline', 'strike',
-    'list', 'bullet',
-    'link', 'image',
-    'color', 'background'
+    'bold',
+    'italic',
+    'underline',
+    'strike',
+    'list',
+    'bullet',
+    'link',
+    'image',
+    'color',
+    'background',
   ];
 
-  // Función para verificar si estamos en el entorno de extensión
-  const isExtensionEnvironment = () => {
-    return typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local;
-  };
+  /* ------------------------------------------------------------------
+    HELPERS EXTENSIÓN
+  ------------------------------------------------------------------*/
+  const isExtensionEnvironment = () =>
+    typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage;
 
-  // Función para obtener datos del almacenamiento
-  const getStorageData = async (keys) => {
-    if (isExtensionEnvironment()) {
-      return await chrome.storage.local.get(keys);
-    } else {
-      // Modo desarrollo: usar localStorage
-      const result = {};
-      if (Array.isArray(keys)) {
-        keys.forEach(key => {
-          const value = localStorage.getItem(key);
-          if (value !== null) {
-            result[key] = JSON.parse(value);
-          }
-        });
-      } else if (typeof keys === 'string') {
-        const value = localStorage.getItem(keys);
-        if (value !== null) {
-          result[keys] = JSON.parse(value);
-        }
-      } else if (keys === null) {
-        // Obtener todas las claves
-        for (let i = 0; i < localStorage.length; i++) {
-          const key = localStorage.key(i);
-          result[key] = JSON.parse(localStorage.getItem(key));
-        }
-      }
-      return result;
+  /* ------------------------------------------------------------------
+    CONEXIÓN WHATSAPP WEB
+  ------------------------------------------------------------------*/
+  const checkWhatsAppConnection = useCallback(async () => {
+    if (!isExtensionEnvironment()) {
+      setConnectionStatus((prev) => ({
+        ...prev,
+        isConnected: false,
+        isLoading: false,
+        error: 'No se puede conectar con WhatsApp Web en este entorno',
+      }));
+      return;
     }
-  };
 
-  // Función para guardar datos en el almacenamiento
-  const setStorageData = async (data) => {
-    if (isExtensionEnvironment()) {
-      await chrome.storage.local.set(data);
-    } else {
-      // Modo desarrollo: usar localStorage
-      Object.entries(data).forEach(([key, value]) => {
-        localStorage.setItem(key, JSON.stringify(value));
+    setConnectionStatus((prev) => ({ ...prev, isLoading: true, error: null }));
+
+    try {
+      const response = await chrome.runtime.sendMessage({ action: 'CHECK_CONNECTION' });
+      setConnectionStatus({
+        isConnected: response.isConnected,
+        isLoading: false,
+        error: null,
+        whatsAppTab: response.tabId ? { id: response.tabId } : null,
+      });
+    } catch (error) {
+      console.error('Error al verificar la conexión con WhatsApp Web:', error);
+      setConnectionStatus({
+        isConnected: false,
+        isLoading: false,
+        error: 'Error al conectar con WhatsApp Web',
+        whatsAppTab: null,
       });
     }
+  }, []);
+
+  const openWhatsAppWeb = async () => {
+    if (!isExtensionEnvironment()) {
+      window.open('https://web.whatsapp.com', '_blank');
+      return;
+    }
+
+    setConnectionStatus((prev) => ({ ...prev, isLoading: true, error: null }));
+
+    try {
+      const response = await chrome.runtime.sendMessage({ action: 'OPEN_WHATSAPP_WEB' });
+      if (response.success) {
+        setConnectionStatus({
+          isConnected: true,
+          isLoading: false,
+          error: null,
+          whatsAppTab: { id: response.tabId },
+        });
+      } else {
+        throw new Error(response.error || 'Error al abrir WhatsApp Web');
+      }
+    } catch (error) {
+      console.error('Error al abrir WhatsApp Web:', error);
+      setConnectionStatus((prev) => ({
+        ...prev,
+        isLoading: false,
+        error: error.message || 'Error al abrir WhatsApp Web',
+      }));
+    }
   };
 
-  // Cargar datos al iniciar
+  const sendWhatsAppMessage = async (phoneNumber, messageText) => {
+    if (!isExtensionEnvironment()) {
+      return { success: false, error: 'No se puede enviar mensajes en este entorno' };
+    }
+    if (!connectionStatus.isConnected) {
+      return { success: false, error: 'No hay conexión con WhatsApp Web' };
+    }
+
+    try {
+      setIsSending(true);
+      setSendStatus({ success: null, message: '' });
+      const response = await chrome.runtime.sendMessage({
+        action: 'SEND_MESSAGE',
+        payload: { phoneNumber, message: messageText },
+      });
+      if (response.success) {
+        setSendStatus({ success: true, message: 'Mensaje enviado correctamente' });
+        return { success: true };
+      }
+      throw new Error(response.error || 'Error al enviar el mensaje');
+    } catch (error) {
+      console.error('Error al enviar mensaje:', error);
+      setSendStatus({ success: false, message: error.message || 'Error al enviar el mensaje' });
+      return { success: false, error: error.message };
+    } finally {
+      setIsSending(false);
+    }
+  };
+
+  /* ------------------------------------------------------------------
+     CARGA INICIAL
+  ------------------------------------------------------------------*/
+  useEffect(() => {
+    checkWhatsAppConnection();
+
+    const handleMessage = (message) => {
+      if (message.action === 'WHATSAPP_CONNECTED') {
+        setConnectionStatus({
+          isConnected: true,
+          isLoading: false,
+          error: null,
+          whatsAppTab: { id: message.tabId },
+        });
+      } else if (message.action === 'WHATSAPP_DISCONNECTED') {
+        setConnectionStatus({
+          isConnected: false,
+          isLoading: false,
+          error: 'Se perdió la conexión con WhatsApp Web',
+          whatsAppTab: null,
+        });
+      }
+    };
+
+    if (isExtensionEnvironment()) {
+      chrome.runtime.onMessage.addListener(handleMessage);
+    }
+
+    return () => {
+      if (isExtensionEnvironment()) {
+        chrome.runtime.onMessage.removeListener(handleMessage);
+      }
+    };
+  }, [checkWhatsAppConnection]);
+
+  /* ------------------------------------------------------------------
+     STORAGE HELPERS
+  ------------------------------------------------------------------*/
+  const getStorageData = async (keys) => {
+    if (isExtensionEnvironment()) return chrome.storage.local.get(keys);
+
+    const result = {};
+    if (Array.isArray(keys)) {
+      keys.forEach((key) => {
+        const value = localStorage.getItem(key);
+        if (value !== null) result[key] = JSON.parse(value);
+      });
+    } else if (typeof keys === 'string') {
+      const value = localStorage.getItem(keys);
+      if (value !== null) result[keys] = JSON.parse(value);
+    } else if (keys === null) {
+      for (let i = 0; i < localStorage.length; i += 1) {
+        const key = localStorage.key(i);
+        result[key] = JSON.parse(localStorage.getItem(key));
+      }
+    }
+    return result;
+  };
+
+  const setStorageData = async (data) => {
+    if (isExtensionEnvironment()) return chrome.storage.local.set(data);
+
+    Object.entries(data).forEach(([key, value]) => localStorage.setItem(key, JSON.stringify(value)));
+  };
+
+  /* ------------------------------------------------------------------
+     CARGAR PLANTILLAS Y PROGRAMADOS
+  ------------------------------------------------------------------*/
   useEffect(() => {
     const loadData = async () => {
       try {
         const result = await getStorageData(['templates', 'scheduledMessages']);
-        if (result.templates) {
-          setTemplates(result.templates);
-        }
-        if (result.scheduledMessages) {
-          setScheduledMessages(result.scheduledMessages);
-        }
+        if (result.templates) setTemplates(result.templates);
+        if (result.scheduledMessages) setScheduledMessages(result.scheduledMessages);
       } catch (error) {
         console.error('Error al cargar datos:', error);
       }
     };
-    
+
     loadData();
-    
-    // Solo configurar el intervalo en el entorno de extensión
+
     if (isExtensionEnvironment()) {
       const interval = setInterval(checkScheduledMessages, 60000);
       return () => clearInterval(interval);
     }
-  }, []);
-  
-  // Verificar mensajes programados
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /* ------------------------------------------------------------------
+     PROGRAMADOS: ENVÍO Y CHEQUEO
+  ------------------------------------------------------------------*/
+  const sendScheduledMessage = async ({ numbers: nums, content }) => {
+    try {
+      const [tab] = await chrome.tabs.query({ url: 'https://web.whatsapp.com/*' });
+      if (!tab) throw new Error('No se encontró una pestaña de WhatsApp Web abierta');
+
+      await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        func: (n, m) => window.postMessage({ type: 'APYSKY_SEND', numeros: n, mensaje: m }, '*'),
+        args: [nums, content],
+      });
+    } catch (error) {
+      console.error('Error al enviar mensaje programado:', error);
+    }
+  };
+
   const checkScheduledMessages = async () => {
     if (!isExtensionEnvironment()) return;
-    
+
     const now = new Date();
-    const result = await getStorageData('scheduledMessages');
-    const messages = result.scheduledMessages || [];
-    
-    const messagesToSend = messages.filter(msg => new Date(msg.scheduledTime) <= now);
-    const remainingMessages = messages.filter(msg => new Date(msg.scheduledTime) > now);
-    
-    if (messagesToSend.length > 0) {
-      // Enviar mensajes programados
-      for (const message of messagesToSend) {
-        await sendScheduledMessage(message);
-      }
-      
-      // Actualizar almacenamiento
+    const { scheduledMessages: messages = [] } = await getStorageData('scheduledMessages');
+
+    const messagesToSend = messages.filter((msg) => new Date(msg.scheduledTime) <= now);
+    const remainingMessages = messages.filter((msg) => new Date(msg.scheduledTime) > now);
+
+    if (messagesToSend.length) {
+      await Promise.all(messagesToSend.map(sendScheduledMessage));
       await setStorageData({ scheduledMessages: remainingMessages });
       setScheduledMessages(remainingMessages);
-      
-      // Notificación
+
       if (chrome.notifications) {
         chrome.notifications.create({
           type: 'basic',
           iconUrl: 'icon128.png',
           title: 'Mensajes Enviados',
-          message: `Se han enviado ${messagesToSend.length} mensajes programados`
+          message: `Se han enviado ${messagesToSend.length} mensajes programados`,
         });
-      } else {
-        console.log(`Se habrían enviado ${messagesToSend.length} mensajes programados`);
       }
     }
   };
-  
-  // Enviar mensaje programado
-  const sendScheduledMessage = async (messageData) => {
-    const { numbers, content } = messageData;
+
+  /* ------------------------------------------------------------------
+     ENVÍO INMEDIATO / PROGRAMAR VIA UI
+  ------------------------------------------------------------------*/
+  const handleSend = async (e) => {
+    e.preventDefault();
+
+    if (!numbers.trim()) return setSendStatus({ success: false, message: 'Ingresa al menos un número' });
+    if (!message.trim()) return setSendStatus({ success: false, message: 'Ingresa un mensaje' });
+
+    const numbersList = numbers.split(/[\n,\s]+/).filter(Boolean);
+    if (!numbersList.length) return setSendStatus({ success: false, message: 'No se encontraron números válidos' });
+
+    const now = new Date();
+    const isScheduled = scheduleDate > now;
+
+    if (isScheduled) {
+      const newMsg = {
+        id: Date.now().toString(),
+        name: `Mensaje para ${numbersList.length} contacto${numbersList.length > 1 ? 's' : ''}`,
+        content: message,
+        numbers: numbersList,
+        scheduledTime: scheduleDate.toISOString(),
+        createdAt: new Date().toISOString(),
+        status: 'scheduled',
+      };
+
+      const updated = [...scheduledMessages, newMsg];
+      await setStorageData({ scheduledMessages: updated });
+      setScheduledMessages(updated);
+      setNumbers('');
+      setMessage('');
+      setSendStatus({ success: true, message: `Mensaje programado para ${formatDateTime(scheduleDate)}` });
+      return;
+    }
+
+    /* Envío inmediato */
     try {
-      const [tab] = await chrome.tabs.query({ url: 'https://web.whatsapp.com/*' });
-      if (tab) {
-        await chrome.scripting.executeScript({
-          target: { tabId: tab.id },
-          func: (nums, msg) => {
-            window.postMessage({ 
-              type: 'APYSKY_SEND', 
-              numeros: nums, 
-              mensaje: msg 
-            }, '*');
-          },
-          args: [numbers, content]
-        });
-      } else {
-        console.error('No se encontró una pestaña de WhatsApp Web abierta');
+      let success = 0;
+      let error = 0;
+      for (const num of numbersList) {
+        const res = await sendWhatsAppMessage(num, message);
+        if (res.success) success += 1;
+        else error += 1;
+        await new Promise((r) => setTimeout(r, 1000)); // pequeño delay
       }
-    } catch (error) {
-      console.error('Error al enviar mensaje programado:', error);
+      setSendStatus({ success: error === 0, message: `Enviados: ${success}, Fallidos: ${error}` });
+      if (error === 0) {
+        setNumbers('');
+        setMessage('');
+      }
+    } catch (err) {
+      console.error(err);
+      setSendStatus({ success: false, message: 'Error al enviar los mensajes' });
     }
   };
-  
-  // Programar mensaje
+
   const scheduleMessage = async () => {
-    const nums = numbers.split('\n').map(n => n.trim()).filter(Boolean);
-    if (!nums.length || !message) return alert("Faltan datos");
-    
-    const newMessage = {
+    if (!numbers.trim() || !message.trim()) return alert('Faltan datos');
+
+    const nums = numbers.split('\n').map((n) => n.trim()).filter(Boolean);
+    const newMsg = {
       id: Date.now().toString(),
       name: `Mensaje para ${nums.length} contacto${nums.length > 1 ? 's' : ''}`,
       content: message,
       numbers: nums,
       scheduledTime: scheduleDate.toISOString(),
       createdAt: new Date().toISOString(),
-      status: 'scheduled'
+      status: 'scheduled',
     };
-    
-    const updatedMessages = [...scheduledMessages, newMessage];
-    await setStorageData({ scheduledMessages: updatedMessages });
-    setScheduledMessages(updatedMessages);
-    
-    // Limpiar formulario
+
+    const updated = [...scheduledMessages, newMsg];
+    await setStorageData({ scheduledMessages: updated });
+    setScheduledMessages(updated);
     setNumbers('');
     setMessage('');
-    
-    // Notificación
+
     if (chrome.notifications) {
       chrome.notifications.create({
         type: 'basic',
         iconUrl: 'icon128.png',
         title: 'Mensaje Programado',
-        message: `Mensaje programado para ${formatDateTime(scheduleDate)}`
+        message: `Mensaje programado para ${formatDateTime(scheduleDate)}`,
       });
-    } else {
-      console.log(`Mensaje programado para ${formatDateTime(scheduleDate)}`);
-    }
-  };
-  
-  // Cancelar mensaje programado
-  const cancelScheduledMessage = async (id) => {
-    if (window.confirm('¿Estás seguro de cancelar este mensaje programado?')) {
-      const updatedMessages = scheduledMessages.filter(msg => msg.id !== id);
-      await setStorageData({ scheduledMessages: updatedMessages });
-      setScheduledMessages(updatedMessages);
     }
   };
 
-  // Guardar plantilla
+  const cancelScheduledMessage = async (id) => {
+    if (!window.confirm('¿Estás seguro de cancelar este mensaje programado?')) return;
+    const updated = scheduledMessages.filter((m) => m.id !== id);
+    await setStorageData({ scheduledMessages: updated });
+    setScheduledMessages(updated);
+  };
+
+  /* ------------------------------------------------------------------
+     CRUD PLANTILLAS
+  ------------------------------------------------------------------*/
   const saveTemplate = async (template) => {
-    let updatedTemplates;
-    
-    if (template.id) {
-      // Actualizar plantilla existente
-      updatedTemplates = templates.map(t => t.id === template.id ? template : t);
-    } else {
-      // Crear nueva plantilla
-      updatedTemplates = [
-        ...templates, 
-        { 
-          ...template, 
-          id: Date.now().toString(), 
-          createdAt: new Date().toISOString() 
-        }
-      ];
-    }
-    
+    const updatedTemplates = template.id
+      ? templates.map((t) => (t.id === template.id ? template : t))
+      : [...templates, { ...template, id: Date.now().toString(), createdAt: new Date().toISOString() }];
+
     await setStorageData({ templates: updatedTemplates });
     setTemplates(updatedTemplates);
     setShowTemplateModal(false);
     setEditingTemplate(null);
   };
 
-  // Eliminar plantilla
   const deleteTemplate = async (id) => {
-    if (window.confirm('¿Estás seguro de eliminar esta plantilla?')) {
-      const updatedTemplates = templates.filter(t => t.id !== id);
-      await setStorageData({ templates: updatedTemplates });
-      setTemplates(updatedTemplates);
-    }
+    if (!window.confirm('¿Estás seguro de eliminar esta plantilla?')) return;
+    const updated = templates.filter((t) => t.id !== id);
+    await setStorageData({ templates: updated });
+    setTemplates(updated);
   };
 
-  // Aplicar plantilla al editor
   const applyTemplate = (template) => {
     setMessage(template.content);
     setShowTemplates(false);
   };
 
-  // Abrir vista previa de plantilla
-  const openPreview = (template) => {
-    setPreviewTemplate(template);
-  };
-  // Manejar envío de mensajes
-  const handleSend = async () => {
-    const nums = numbers.split('\n').map(n => n.trim()).filter(Boolean);
-    if (!nums.length || !message) return alert("Faltan datos");
-
-    try {
-      // Enviar mensaje a través de content script
-      const [tab] = await chrome.tabs.query({ url: 'https://web.whatsapp.com/*' });
-      if (tab) {
-        await chrome.scripting.executeScript({
-          target: { tabId: tab.id },
-          func: (nums, msg) => {
-            window.postMessage({ 
-              type: 'APYSKY_SEND', 
-              numeros: nums, 
-              mensaje: msg 
-            }, '*');
-          },
-          args: [nums, message]
-        });
-        
-        // Limpiar después de enviar
-        setNumbers('');
-        setMessage('');
-        
-        // Mostrar notificación
-        if (chrome.notifications) {
-          chrome.notifications.create({
-            type: 'basic',
-            iconUrl: 'icon128.png',
-            title: 'Mensaje Enviado',
-            message: `Mensaje enviado a ${nums.length} contacto${nums.length > 1 ? 's' : ''}`
-          });
-        }
-      } else {
-        alert('Por favor, abre WhatsApp Web para poder enviar mensajes');
-      }
-    } catch (error) {
-      console.error('Error al enviar mensaje:', error);
-      alert('Error al enviar el mensaje. Asegúrate de estar en WhatsApp Web.');
-    }
-  };
-
-  // Exportar plantillas
+  /* ------------------------------------------------------------------
+     IMPORT / EXPORT
+  ------------------------------------------------------------------*/
   const exportTemplates = () => {
     const data = JSON.stringify(templates, null, 2);
     const blob = new Blob([data], { type: 'application/json' });
@@ -498,52 +646,40 @@ function Popup() {
     URL.revokeObjectURL(url);
   };
 
-  // Importar plantillas
   const importTemplates = () => {
     try {
-      const importedTemplates = JSON.parse(importData);
-      if (!Array.isArray(importedTemplates)) {
-        throw new Error('El archivo no contiene un array de plantillas válido');
-      }
-      
-      // Validar cada plantilla
-      const validTemplates = importedTemplates.filter(t => 
-        t && typeof t === 'object' && 
-        'name' in t && 
-        'content' in t
-      );
-      
-      if (validTemplates.length === 0) {
-        throw new Error('No se encontraron plantillas válidas en el archivo');
-      }
-      
-      // Combinar con las existentes, evitando duplicados
-      const existingIds = new Set(templates.map(t => t.id));
-      const newTemplates = [
-        ...templates,
-        ...validTemplates.filter(t => !existingIds.has(t.id))
-      ];
-      
-      setTemplates(newTemplates);
-      setStorageData({ templates: newTemplates });
+      const imported = JSON.parse(importData);
+      if (!Array.isArray(imported)) throw new Error('El archivo no contiene un array de plantillas válido');
+      const valid = imported.filter((t) => t && typeof t === 'object' && 'name' in t && 'content' in t);
+      if (!valid.length) throw new Error('No se encontraron plantillas válidas');
+
+      const existingIds = new Set(templates.map((t) => t.id));
+      const merged = [...templates, ...valid.filter((t) => !existingIds.has(t.id))];
+      setTemplates(merged);
+      setStorageData({ templates: merged });
       setImportData('');
       setImportExportOpen(false);
-      
-      alert(`Se importaron ${validTemplates.length} plantillas correctamente`);
+      alert(`Se importaron ${valid.length} plantillas correctamente`);
     } catch (error) {
       console.error('Error al importar plantillas:', error);
       alert(`Error al importar plantillas: ${error.message}`);
     }
   };
 
+  /* ------------------------------------------------------------------
+     RENDER
+  ------------------------------------------------------------------*/
   return (
     <div style={{ padding: '15px', width: '400px', fontFamily: 'Arial', maxHeight: '80vh', display: 'flex', flexDirection: 'column' }}>
+      {/* Estilos Quill */}
       <style>{customStyles}</style>
+
+      {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
         <h2 style={{ color: '#b30000', margin: 0 }}>Apysky</h2>
         <div style={{ display: 'flex', gap: '10px' }}>
-          <button 
-            onClick={() => setShowScheduled(!showScheduled)}
+          <button
+            onClick={() => setShowScheduled((v) => !v)}
             style={{
               background: showScheduled ? '#b30000' : 'transparent',
               border: '1px solid #b30000',
@@ -554,14 +690,14 @@ function Popup() {
               fontSize: '12px',
               display: 'flex',
               alignItems: 'center',
-              gap: '5px'
+              gap: '5px',
             }}
           >
             <span>⏰</span>
             {showScheduled ? 'Ocultar' : 'Ver'} Programados
           </button>
-          <button 
-            onClick={() => setShowTemplates(!showTemplates)}
+          <button
+            onClick={() => setShowTemplates((v) => !v)}
             style={{
               background: showTemplates ? '#b30000' : 'transparent',
               border: '1px solid #b30000',
@@ -572,7 +708,7 @@ function Popup() {
               fontSize: '12px',
               display: 'flex',
               alignItems: 'center',
-              gap: '5px'
+              gap: '5px',
             }}
           >
             <span>📋</span>
@@ -580,8 +716,11 @@ function Popup() {
           </button>
         </div>
       </div>
-      
+
+      {/* CUERPO */}
+      {/* ------ Módulo Programados ------ */}
       {showScheduled ? (
+        /* Lista de programados */
         <div style={{ flexGrow: 1, marginBottom: '15px', overflowY: 'auto' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
             <h3 style={{ margin: 0, color: '#333' }}>Mensajes Programados</h3>
@@ -597,27 +736,27 @@ function Popup() {
                 fontSize: '12px',
                 display: 'flex',
                 alignItems: 'center',
-                gap: '5px'
+                gap: '5px',
               }}
             >
               <span>←</span> Volver
             </button>
           </div>
-          
+
           {scheduledMessages.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '20px', color: '#666' }}>
               No hay mensajes programados
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              {scheduledMessages.map(msg => (
-                <div 
+              {scheduledMessages.map((msg) => (
+                <div
                   key={msg.id}
                   style={{
                     border: '1px solid #e0e0e0',
                     borderRadius: '4px',
                     padding: '10px',
-                    backgroundColor: '#f9f9f9'
+                    backgroundColor: '#f9f9f9',
                   }}
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
@@ -628,18 +767,20 @@ function Popup() {
                       </small>
                     </div>
                     <div style={{ display: 'flex', gap: '5px' }}>
-                      <span style={{
-                        background: '#e6f7ff',
-                        color: '#1890ff',
-                        padding: '2px 6px',
-                        borderRadius: '10px',
-                        fontSize: '11px',
-                        display: 'flex',
-                        alignItems: 'center'
-                      }}>
+                      <span
+                        style={{
+                          background: '#e6f7ff',
+                          color: '#1890ff',
+                          padding: '2px 6px',
+                          borderRadius: '10px',
+                          fontSize: '11px',
+                          display: 'flex',
+                          alignItems: 'center',
+                        }}
+                      >
                         {getTimeRemaining(new Date(msg.scheduledTime))}
                       </span>
-                      <button 
+                      <button
                         onClick={(e) => {
                           e.stopPropagation();
                           cancelScheduledMessage(msg.id);
@@ -650,7 +791,7 @@ function Popup() {
                           color: '#ff4d4f',
                           cursor: 'pointer',
                           display: 'flex',
-                          alignItems: 'center'
+                          alignItems: 'center',
                         }}
                         title="Cancelar"
                       >
@@ -658,7 +799,8 @@ function Popup() {
                       </button>
                     </div>
                   </div>
-                  <div 
+
+                  <div
                     style={{
                       color: '#333',
                       fontSize: '13px',
@@ -670,18 +812,23 @@ function Popup() {
                       textOverflow: 'ellipsis',
                       display: '-webkit-box',
                       WebkitLineClamp: 3,
-                      WebkitBoxOrient: 'vertical'
+                      WebkitBoxOrient: 'vertical',
                     }}
                     dangerouslySetInnerHTML={{ __html: msg.content }}
                   />
-                  <div style={{ 
-                    fontSize: '11px', 
-                    color: '#666', 
-                    marginTop: '8px',
-                    display: 'flex',
-                    justifyContent: 'space-between'
-                  }}>
-                    <span>{msg.numbers.length} contacto{msg.numbers.length > 1 ? 's' : ''}</span>
+
+                  <div
+                    style={{
+                      fontSize: '11px',
+                      color: '#666',
+                      marginTop: '8px',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                    }}
+                  >
+                    <span>
+                      {msg.numbers.length} contacto{msg.numbers.length > 1 ? 's' : ''}
+                    </span>
                     <span>Creado: {new Date(msg.createdAt).toLocaleString()}</span>
                   </div>
                 </div>
@@ -689,12 +836,13 @@ function Popup() {
             </div>
           )}
         </div>
-      ) : showTemplates ? (
+      ) : /* ------ Módulo Plantillas ------ */ showTemplates ? (
+        /* Lista plantillas */
         <div style={{ flexGrow: 1, marginBottom: '15px', overflowY: 'auto' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', gap: '10px' }}>
             <h4 style={{ margin: 0, color: '#333' }}>Tus Plantillas</h4>
             <div style={{ display: 'flex', gap: '8px' }}>
-              <button 
+              <button
                 onClick={() => setImportExportOpen(true)}
                 style={{
                   background: 'transparent',
@@ -706,13 +854,13 @@ function Popup() {
                   fontSize: '12px',
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '4px'
+                  gap: '4px',
                 }}
                 title="Importar/Exportar"
               >
                 <span>🔄</span>
               </button>
-              <button 
+              <button
                 onClick={() => setShowTemplates(false)}
                 style={{
                   background: '#b30000',
@@ -724,19 +872,19 @@ function Popup() {
                   fontSize: '12px',
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '4px'
+                  gap: '4px',
                 }}
               >
                 <span>←</span> Volver
               </button>
             </div>
           </div>
-          
-          <button 
+
+          <button
             onClick={() => {
-                setEditingTemplate(null);
-                setShowTemplateModal(true);
-              }}
+              setEditingTemplate(null);
+              setShowTemplateModal(true);
+            }}
             style={{
               width: '100%',
               marginBottom: '15px',
@@ -749,21 +897,22 @@ function Popup() {
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              gap: '5px'
+              gap: '5px',
             }}
           >
             <span>+</span> Crear Nueva Plantilla
           </button>
-          
+
           {templates.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '20px', color: '#666' }}>
               No hay plantillas guardadas. Crea tu primera plantilla.
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              {templates.map(template => (
-                <div 
+              {templates.map((template) => (
+                <div
                   key={template.id}
+                  onClick={() => applyTemplate(template)}
                   style={{
                     border: '1px solid #e0e0e0',
                     borderRadius: '4px',
@@ -771,69 +920,46 @@ function Popup() {
                     backgroundColor: '#f9f9f9',
                     cursor: 'pointer',
                     transition: 'all 0.2s',
-                    '&:hover': {
-                      transform: 'translateY(-2px)',
-                      boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
-                    }
                   }}
-                  onClick={() => applyTemplate(template)}
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
                     <strong style={{ color: '#b30000' }}>{template.name}</strong>
                     <div style={{ display: 'flex', gap: '5px' }}>
-                      <button 
+                      <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          openPreview(template);
+                          setPreviewTemplate(template);
                         }}
-                        style={{
-                          background: 'transparent',
-                          border: 'none',
-                          color: '#666',
-                          cursor: 'pointer',
-                          marginRight: '5px'
-                        }}
+                        style={{ background: 'transparent', border: 'none', color: '#666', cursor: 'pointer' }}
                         title="Vista Previa"
                       >
                         👁️
                       </button>
-                      <button 
+                      <button
                         onClick={(e) => {
                           e.stopPropagation();
                           setEditingTemplate(template);
                           setShowTemplateModal(true);
                         }}
-                        style={{
-                          background: 'transparent',
-                          border: 'none',
-                          color: '#1890ff',
-                          cursor: 'pointer',
-                          marginRight: '5px'
-                        }}
+                        style={{ background: 'transparent', border: 'none', color: '#1890ff', cursor: 'pointer' }}
                         title="Editar"
                       >
                         ✏️
                       </button>
-                      <button 
+                      <button
                         onClick={async (e) => {
                           e.stopPropagation();
-                          if (window.confirm('¿Estás seguro de eliminar esta plantilla?')) {
-                            await deleteTemplate(template.id);
-                          }
+                          await deleteTemplate(template.id);
                         }}
-                        style={{
-                          background: 'transparent',
-                          border: 'none',
-                          color: '#ff4d4f',
-                          cursor: 'pointer'
-                        }}
+                        style={{ background: 'transparent', border: 'none', color: '#ff4d4f', cursor: 'pointer' }}
                         title="Eliminar"
                       >
                         🗑️
                       </button>
                     </div>
                   </div>
-                  <div 
+
+                  <div
                     style={{
                       color: '#333',
                       fontSize: '13px',
@@ -845,17 +971,12 @@ function Popup() {
                       textOverflow: 'ellipsis',
                       display: '-webkit-box',
                       WebkitLineClamp: 3,
-                      WebkitBoxOrient: 'vertical'
+                      WebkitBoxOrient: 'vertical',
                     }}
                     dangerouslySetInnerHTML={{ __html: template.content }}
                   />
                   {template.createdAt && (
-                    <div style={{ 
-                      fontSize: '11px', 
-                      color: '#888', 
-                      marginTop: '8px',
-                      textAlign: 'right'
-                    }}>
+                    <div style={{ fontSize: '11px', color: '#888', marginTop: '8px', textAlign: 'right' }}>
                       Creada: {new Date(template.createdAt).toLocaleString()}
                     </div>
                   )}
@@ -865,41 +986,40 @@ function Popup() {
           )}
         </div>
       ) : (
+        /* ------ Módulo Envío Inmediato ------ */
         <div style={{ marginBottom: '15px', flexGrow: 1, display: 'flex', flexDirection: 'column' }}>
+          {/* Editor */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '5px' }}>
             <label style={{ color: '#333', fontWeight: 'bold' }}>Mensaje:</label>
-            <div>
-              <button 
-                onClick={() => setShowTemplates(true)}
-                style={{
-                  background: 'transparent',
-                  border: '1px solid #b30000',
-                  color: '#b30000',
-                  padding: '2px 8px',
-                  borderRadius: '4px',
-                  cursor: 'pointer',
-                  fontSize: '12px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '4px'
-                }}
-              >
-                <span>📋</span> Plantillas
-              </button>
-            </div>
+            <button
+              onClick={() => setShowTemplates(true)}
+              style={{
+                background: 'transparent',
+                border: '1px solid #b30000',
+                color: '#b30000',
+                padding: '2px 8px',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontSize: '12px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+              }}
+            >
+              <span>📋</span> Plantillas
+            </button>
           </div>
-          
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', marginBottom: '15px' }}>
-            <ReactQuill
-              theme="snow"
-              value={message}
-              onChange={setMessage}
-              modules={modules}
-              formats={formats}
-              style={{ flex: 1, display: 'flex', flexDirection: 'column' }}
-            />
-          </div>
-          
+
+          <ReactQuill
+            theme="snow"
+            value={message}
+            onChange={setMessage}
+            modules={modules}
+            formats={formats}
+            style={{ flex: 1, display: 'flex', flexDirection: 'column', marginBottom: '15px' }}
+          />
+
+          {/* Números */}
           <div style={{ marginBottom: '15px' }}>
             <label style={{ display: 'block', marginBottom: '5px', color: '#333', fontWeight: 'bold' }}>
               Números (uno por línea):
@@ -915,113 +1035,106 @@ function Popup() {
                 border: '1px solid #b30000',
                 borderRadius: '4px',
                 boxSizing: 'border-box',
-                resize: 'vertical'
+                resize: 'vertical',
               }}
             />
           </div>
-          
+
+          {/* Fecha programada */}
           <div style={{ marginBottom: '15px' }}>
             <label style={{ display: 'block', marginBottom: '5px', color: '#333', fontWeight: 'bold' }}>
               Programar envío (opcional):
             </label>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <DatePicker
-                selected={scheduleDate}
-                onChange={(date) => setScheduleDate(date)}
-                showTimeSelect
-                timeFormat="HH:mm"
-                timeIntervals={5}
-                dateFormat="dd/MM/yyyy HH:mm"
-                minDate={new Date()}
-                className="custom-datepicker"
-                wrapperClassName="datepicker-wrapper"
-                customInput={
-                  <input 
-                    style={{
-                      padding: '8px',
-                      border: '1px solid #b30000',
-                      borderRadius: '4px',
-                      width: '100%',
-                      cursor: 'pointer'
-                    }}
-                    readOnly
-                  />
-                }
-              />
-            </div>
+            <DatePicker
+              selected={scheduleDate}
+              onChange={setScheduleDate}
+              showTimeSelect
+              timeFormat="HH:mm"
+              timeIntervals={5}
+              dateFormat="dd/MM/yyyy HH:mm"
+              minDate={new Date()}
+              className="custom-datepicker"
+              wrapperClassName="datepicker-wrapper"
+              customInput={
+                <input
+                  style={{
+                    padding: '8px',
+                    border: '1px solid #b30000',
+                    borderRadius: '4px',
+                    width: '100%',
+                    cursor: 'pointer',
+                  }}
+                  readOnly
+                />
+              }
+            />
           </div>
-          
+
+          {/* BOTONES */}
           <div style={{ display: 'flex', gap: '10px' }}>
             <button
               onClick={handleSend}
-              disabled={!message.trim() || !numbers.trim()}
+              disabled={!message.trim() || !numbers.trim() || isSending}
               style={{
                 flex: 1,
                 padding: '10px',
-                backgroundColor: !message.trim() || !numbers.trim() ? '#ccc' : '#b30000',
+                backgroundColor:
+                  !message.trim() || !numbers.trim() || isSending
+                    ? '#ccc'
+                    : '#b30000',
                 color: 'white',
                 border: 'none',
                 borderRadius: '4px',
-                cursor: !message.trim() || !numbers.trim() ? 'not-allowed' : 'pointer',
+                cursor:
+                  !message.trim() || !numbers.trim() || isSending
+                    ? 'not-allowed'
+                    : 'pointer',
+                fontSize: '14px',
                 fontWeight: 'bold',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                gap: '8px'
+                gap: '8px',
               }}
             >
-              <span>✉️</span> Enviar Ahora
-            </button>
-            
-            <button
-              onClick={scheduleMessage}
-              disabled={!message.trim() || !numbers.trim()}
-              style={{
-                flex: 1,
-                padding: '10px',
-                backgroundColor: !message.trim() || !numbers.trim() ? '#f0f0f0' : '#f9f0ff',
-                color: !message.trim() || !numbers.trim() ? '#999' : '#722ed1',
-                border: `1px solid ${!message.trim() || !numbers.trim() ? '#d9d9d9' : '#d3adf7'}`,
-                borderRadius: '4px',
-                cursor: !message.trim() || !numbers.trim() ? 'not-allowed' : 'pointer',
-                fontWeight: 'bold',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '8px'
-              }}
-            >
-              <span>⏰</span> Programar
+              <span>✉️</span> {isSending ? 'Enviando...' : (scheduleDate > new Date() ? 'Programar' : 'Enviar Ahora')}
             </button>
           </div>
         </div>
       )}
-      
-      {/* Modal de vista previa */}
+
+      {/* -----------------------------------------------------------
+         MODALES AUXILIARES
+      ------------------------------------------------------------*/}
+      {/* Vista previa */}
       {previewTemplate && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          backgroundColor: 'rgba(0,0,0,0.7)',
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          zIndex: 1000,
-          padding: '20px'
-        }}>
-          <div style={{
-            backgroundColor: 'white',
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0,0,0,0.7)',
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            zIndex: 1000,
             padding: '20px',
-            borderRadius: '8px',
-            maxWidth: '600px',
-            width: '100%',
-            maxHeight: '90vh',
-            overflowY: 'auto',
-            position: 'relative'
-          }}>
+          }}
+        >
+          <div
+            style={{
+              backgroundColor: 'white',
+              padding: '20px',
+              borderRadius: '8px',
+              maxWidth: '600px',
+              width: '100%',
+              maxHeight: '90vh',
+              overflowY: 'auto',
+              position: 'relative',
+            }}
+          >
             <button
               onClick={() => setPreviewTemplate(null)}
               style={{
@@ -1032,20 +1145,20 @@ function Popup() {
                 border: 'none',
                 fontSize: '20px',
                 cursor: 'pointer',
-                color: '#666'
+                color: '#666',
               }}
             >
               ×
             </button>
             <h3 style={{ color: '#b30000', marginTop: 0 }}>{previewTemplate.name}</h3>
-            <div 
+            <div
               style={{
                 border: '1px solid #eee',
                 borderRadius: '4px',
                 padding: '15px',
                 marginTop: '10px',
                 backgroundColor: '#fafafa',
-                minHeight: '100px'
+                minHeight: '100px',
               }}
               dangerouslySetInnerHTML={{ __html: previewTemplate.content }}
             />
@@ -1057,7 +1170,7 @@ function Popup() {
                   backgroundColor: '#f0f0f0',
                   border: '1px solid #d9d9d9',
                   borderRadius: '4px',
-                  cursor: 'pointer'
+                  cursor: 'pointer',
                 }}
               >
                 Cerrar
@@ -1073,7 +1186,7 @@ function Popup() {
                   color: 'white',
                   border: 'none',
                   borderRadius: '4px',
-                  cursor: 'pointer'
+                  cursor: 'pointer',
                 }}
               >
                 Usar esta plantilla
@@ -1082,34 +1195,39 @@ function Popup() {
           </div>
         </div>
       )}
-      
-      {/* Modal de importar/exportar */}
+
+      {/* Import / export */}
       {importExportOpen && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          backgroundColor: 'rgba(0,0,0,0.7)',
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          zIndex: 1000,
-          padding: '20px'
-        }}>
-          <div style={{
-            backgroundColor: 'white',
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0,0,0,0.7)',
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            zIndex: 1000,
             padding: '20px',
-            borderRadius: '8px',
-            maxWidth: '500px',
-            width: '100%',
-            maxHeight: '90vh',
-            overflowY: 'auto',
-            position: 'relative'
-          }}>
+          }}
+        >
+          <div
+            style={{
+              backgroundColor: 'white',
+              padding: '20px',
+              borderRadius: '8px',
+              maxWidth: '500px',
+              width: '100%',
+              maxHeight: '90vh',
+              overflowY: 'auto',
+              position: 'relative',
+            }}
+          >
             <h3 style={{ color: '#b30000', marginTop: 0 }}>Importar/Exportar Plantillas</h3>
-            
+
+            {/* Export */}
             <div style={{ marginBottom: '20px' }}>
               <h4 style={{ marginBottom: '10px' }}>Exportar Plantillas</h4>
               <p style={{ fontSize: '14px', color: '#666', marginBottom: '10px' }}>
@@ -1127,22 +1245,23 @@ function Popup() {
                   cursor: templates.length === 0 ? 'not-allowed' : 'pointer',
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '8px'
+                  gap: '8px',
                 }}
               >
-                <span>⬇️</span> Exportar ({templates.length} plantillas)
+                <span>⬇️</span> Exportar ({templates.length})
               </button>
             </div>
-            
+
+            {/* Import */}
             <div>
               <h4 style={{ marginBottom: '10px' }}>Importar Plantillas</h4>
               <p style={{ fontSize: '14px', color: '#666', marginBottom: '10px' }}>
-                Importa plantillas desde un archivo JSON. Las plantillas con IDs existentes no se sobreescribirán.
+                Importa plantillas desde un archivo JSON. Las que ya existan no se sobrescribirán.
               </p>
               <textarea
                 value={importData}
                 onChange={(e) => setImportData(e.target.value)}
-                placeholder='Pega aquí el contenido del archivo JSON de plantillas...'
+                placeholder="Pega aquí el JSON..."
                 style={{
                   width: '100%',
                   minHeight: '150px',
@@ -1152,10 +1271,10 @@ function Popup() {
                   marginBottom: '15px',
                   fontFamily: 'monospace',
                   fontSize: '12px',
-                  resize: 'vertical'
+                  resize: 'vertical',
                 }}
               />
-              
+
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px' }}>
                 <button
                   onClick={() => {
@@ -1164,13 +1283,10 @@ function Popup() {
                     input.accept = '.json';
                     input.onchange = (e) => {
                       const file = e.target.files[0];
-                      if (file) {
-                        const reader = new FileReader();
-                        reader.onload = (event) => {
-                          setImportData(event.target.result);
-                        };
-                        reader.readAsText(file);
-                      }
+                      if (!file) return;
+                      const reader = new FileReader();
+                      reader.onload = (ev) => setImportData(ev.target.result);
+                      reader.readAsText(file);
                     };
                     input.click();
                   }}
@@ -1181,15 +1297,11 @@ function Popup() {
                     borderRadius: '4px',
                     cursor: 'pointer',
                     flex: 1,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '8px'
                   }}
                 >
                   <span>📁</span> Seleccionar Archivo
                 </button>
-                
+
                 <button
                   onClick={importTemplates}
                   disabled={!importData.trim()}
@@ -1201,17 +1313,13 @@ function Popup() {
                     borderRadius: '4px',
                     cursor: !importData.trim() ? 'not-allowed' : 'pointer',
                     flex: 1,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '8px'
                   }}
                 >
                   <span>⬆️</span> Importar
                 </button>
               </div>
             </div>
-            
+
             <div style={{ marginTop: '20px', display: 'flex', justifyContent: 'flex-end' }}>
               <button
                 onClick={() => {
@@ -1223,7 +1331,7 @@ function Popup() {
                   backgroundColor: '#f0f0f0',
                   border: '1px solid #d9d9d9',
                   borderRadius: '4px',
-                  cursor: 'pointer'
+                  cursor: 'pointer',
                 }}
               >
                 Cerrar
@@ -1232,8 +1340,8 @@ function Popup() {
           </div>
         </div>
       )}
-      
-      {/* Modal de plantilla */}
+
+      {/* MODAL NUEVA/EDITAR PLANTILLA */}
       <TemplateModal
         isOpen={showTemplateModal}
         onClose={() => {
