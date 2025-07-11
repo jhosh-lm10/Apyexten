@@ -249,6 +249,7 @@ function Popup() {
     date.setMinutes(date.getMinutes() + 5);
     return date;
   });
+  const [delayBetweenMessages, setDelayBetweenMessages] = useState(5); // segundos por defecto
   const [showScheduled, setShowScheduled] = useState(false);
 
   /* --------------------
@@ -352,33 +353,106 @@ function Popup() {
     }
   };
 
-  const sendWhatsAppMessage = async (phoneNumber, messageText) => {
-    if (!isExtensionEnvironment()) {
-      return { success: false, error: 'No se puede enviar mensajes en este entorno' };
-    }
-    if (!connectionStatus.isConnected) {
-      return { success: false, error: 'No hay conexión con WhatsApp Web' };
-    }
-
+  const sendWhatsAppMessage = async (phoneNumber, messageText, isLast = true) => {
+    const API_URL = 'http://localhost:5000/api/messages';
+    
     try {
       setIsSending(true);
-      setSendStatus({ success: null, message: '' });
-      const response = await chrome.runtime.sendMessage({
-        action: 'SEND_MESSAGE',
-        payload: { phoneNumber, message: messageText },
+      setSendStatus({ success: null, message: `Enviando a ${phoneNumber}...` });
+      
+      // Enviar mensaje al backend
+      const response = await fetch(API_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          to: phoneNumber,
+          message: messageText,
+          scheduledDate: new Date().toISOString(), // Enviar inmediatamente
+          delay: delayBetweenMessages
+        })
       });
-      if (response.success) {
-        setSendStatus({ success: true, message: 'Mensaje enviado correctamente' });
-        return { success: true };
+      
+      const data = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(data.error || 'Error al enviar el mensaje');
       }
-      throw new Error(response.error || 'Error al enviar el mensaje');
+      
+      const statusMessage = `Mensaje programado para ${phoneNumber} correctamente`;
+      setSendStatus({ success: true, message: statusMessage });
+      console.log(statusMessage, data);
+      
+      // Si no es el último mensaje, mostramos un estado de espera
+      if (!isLast) {
+        setSendStatus({ 
+          success: null, 
+          message: `Esperando ${delayBetweenMessages} segundos antes del siguiente envío...` 
+        });
+        
+        // Esperamos el tiempo configurado antes de permitir el siguiente envío
+        await new Promise(resolve => setTimeout(resolve, delayBetweenMessages * 1000));
+      }
+      
+      return { success: true, data };
+      
     } catch (error) {
       console.error('Error al enviar mensaje:', error);
-      setSendStatus({ success: false, message: error.message || 'Error al enviar el mensaje' });
-      return { success: false, error: error.message };
+      const errorMessage = `Error al enviar a ${phoneNumber}: ${error.message || 'Error desconocido'}`;
+      setSendStatus({ success: false, message: errorMessage });
+      return { success: false, error: errorMessage };
     } finally {
-      setIsSending(false);
+      if (isLast) {
+        setIsSending(false);
+      }
     }
+  };
+
+  // Función para enviar mensajes a múltiples números con intervalo
+  const sendBulkMessages = async (phoneNumbers, messageText) => {
+    if (!phoneNumbers || !phoneNumbers.length) {
+      setSendStatus({ success: false, message: 'No hay números de teléfono para enviar' });
+      return { success: false, error: 'No hay números de teléfono' };
+    }
+
+    setIsSending(true);
+    setSendStatus({ success: null, message: `Iniciando envío a ${phoneNumbers.length} contactos...` });
+
+    let successCount = 0;
+    const results = [];
+
+    for (let i = 0; i < phoneNumbers.length; i++) {
+      const phone = phoneNumbers[i].trim();
+      if (!phone) continue;
+
+      const isLast = i === phoneNumbers.length - 1;
+      const result = await sendWhatsAppMessage(phone, messageText, isLast);
+      
+      results.push({ phone, success: result.success, error: result.error });
+      if (result.success) successCount++;
+
+      // Actualizamos el estado con el progreso
+      setSendStatus(prev => ({
+        ...prev,
+        message: `Progreso: ${i + 1}/${phoneNumbers.length} enviados (${successCount} exitosos)`
+      }));
+    }
+
+    const finalMessage = `
+      Envío completado: 
+      • Total: ${phoneNumbers.length}
+      • Exitosos: ${successCount}
+      • Fallidos: ${phoneNumbers.length - successCount}
+    `;
+    
+    setSendStatus({
+      success: successCount > 0,
+      message: finalMessage
+    });
+    
+    setIsSending(false);
+    return { success: successCount > 0, results };
   };
 
   /* ------------------------------------------------------------------
@@ -1070,10 +1144,58 @@ function Popup() {
             />
           </div>
 
+          {/* Tiempo entre mensajes */}
+          <div style={{ marginBottom: '15px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '5px' }}>
+              <label style={{ color: '#333', fontWeight: 'bold' }}>
+                Tiempo entre mensajes:
+              </label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                <input
+                  type="number"
+                  min="1"
+                  max="60"
+                  value={delayBetweenMessages}
+                  onChange={(e) => setDelayBetweenMessages(Math.max(1, Math.min(60, Number(e.target.value))))}
+                  style={{
+                    width: '60px',
+                    padding: '4px 8px',
+                    border: '1px solid #b30000',
+                    borderRadius: '4px',
+                    textAlign: 'center'
+                  }}
+                />
+                <span>segundos</span>
+              </div>
+            </div>
+            <div style={{ fontSize: '12px', color: '#666', marginTop: '4px' }}>
+              Tiempo de espera entre cada mensaje para evitar bloqueos
+            </div>
+          </div>
+
           {/* BOTONES */}
-          <div style={{ display: 'flex', gap: '10px' }}>
+          <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
             <button
-              onClick={handleSend}
+              onClick={async () => {
+                // Restablecer la fecha al momento actual para envío inmediato
+                setScheduleDate(new Date());
+                
+                // Obtener números de teléfono
+                const phoneNumbers = numbers
+                  .split('\n')
+                  .map(num => num.trim())
+                  .filter(num => num);
+                
+                if (phoneNumbers.length === 0) {
+                  setSendStatus({ success: false, message: 'No hay números de teléfono válidos' });
+                  return;
+                }
+                
+                // Mostrar confirmación
+                if (window.confirm(`¿Estás seguro de enviar este mensaje a ${phoneNumbers.length} contactos?`)) {
+                  await sendBulkMessages(phoneNumbers, message);
+                }
+              }}
               disabled={!message.trim() || !numbers.trim() || isSending}
               style={{
                 flex: 1,
@@ -1097,7 +1219,53 @@ function Popup() {
                 gap: '8px',
               }}
             >
-              <span>✉️</span> {isSending ? 'Enviando...' : (scheduleDate > new Date() ? 'Programar' : 'Enviar Ahora')}
+              <span>✉️</span> {isSending ? 'Enviando...' : 'Enviar Ahora'}
+            </button>
+            
+            <button
+              onClick={async () => {
+                // Obtener números de teléfono
+                const phoneNumbers = numbers
+                  .split('\n')
+                  .map(num => num.trim())
+                  .filter(num => num);
+                
+                if (phoneNumbers.length === 0) {
+                  setSendStatus({ success: false, message: 'No hay números de teléfono válidos' });
+                  return;
+                }
+                
+                // Mostrar confirmación
+                if (window.confirm(`¿Estás seguro de programar este mensaje para ${formatDateTime(scheduleDate)}?`)) {
+                  // Aquí iría la lógica para programar los mensajes
+                  setSendStatus({ 
+                    success: true, 
+                    message: `Mensaje programado para ${formatDateTime(scheduleDate)}` 
+                  });
+                }
+              }}
+              disabled={!message.trim() || !numbers.trim() || isSending}
+              style={{
+                padding: '8px 12px',
+                backgroundColor: '#f9f0ff',
+                color: '#722ed1',
+                border: '1px solid #d3adf7',
+                borderRadius: '4px',
+                cursor:
+                  !message.trim() || !numbers.trim() || isSending
+                    ? 'not-allowed'
+                    : 'pointer',
+                fontSize: '12px',
+                fontWeight: 'bold',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '6px',
+                whiteSpace: 'nowrap',
+              }}
+              title="Programar para más tarde"
+            >
+              <span>⏰</span> Programar
             </button>
           </div>
         </div>

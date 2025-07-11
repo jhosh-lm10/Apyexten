@@ -20,11 +20,13 @@
   "author": "Tu Nombre",
   "license": "ISC",
   "dependencies": {
+    "bcryptjs": "^3.0.2",
     "colors": "^1.4.0",
     "cors": "^2.8.5",
-    "dotenv": "^16.3.1",
+    "dotenv": "^16.6.1",
     "express": "^5.1.0",
-    "mongoose": "^8.16.2",
+    "jsonwebtoken": "^9.0.2",
+    "mongoose": "^8.16.3",
     "mongoose-paginate-v2": "^1.9.1",
     "winston": "^3.10.0"
   },
@@ -40,7 +42,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/tu-usuario/whatsapp-scheduler.git"
+    "url": "git+https://github.com/tu-usuario/whatsapp-scheduler.git"
   },
   "bugs": {
     "url": "https://github.com/tu-usuario/whatsapp-scheduler/issues"

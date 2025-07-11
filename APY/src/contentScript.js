@@ -1,103 +1,152 @@
-// Content Script para la extensión Apysky
-console.log('APYSKY: Content Script cargado en WhatsApp Web');
+// contentScript.js
+console.log('APYSKY: Content script cargado');
 
-// Función para verificar si estamos en la página de chat de WhatsApp Web
-function isChatOpen() {
-  return document.querySelector('div[data-testid="conversation-panel-wrapper"]') !== null;
-}
-
-// Función para obtener el número de teléfono del chat actual
-function getCurrentChatNumber() {
-  const header = document.querySelector('header[data-testid="conversation-header"]');
-  if (!header) return null;
-  
-  // Extraer el número de teléfono del atributo data-id del chat
-  const chatPanel = document.querySelector('div[data-testid="conversation-panel-wrapper"]');
-  if (!chatPanel) return null;
-  
-  const chatId = chatPanel.getAttribute('data-id');
-  if (!chatId) return null;
-  
-  // El formato suele ser: "<número>@c.us"
-  return chatId.split('@')[0];
-}
-
-// Función para enviar un mensaje al chat actual
-async function sendMessageToCurrentChat(message, attachment = null) {
-  try {
-    const chatInput = document.querySelector('div[title="Escribe un mensaje aquí"]');
-    if (!chatInput) {
-      console.error('APYSKY: No se pudo encontrar el campo de entrada de mensaje');
-      return false;
+// Función mejorada para encontrar el input de WhatsApp
+function findWhatsAppInput() {
+    // Probar diferentes selectores en orden de prioridad
+    const selectors = [
+        'div[contenteditable="true"][data-tab="10"]',  // Selector principal
+        'div[contenteditable="true"][title*="escribir"]',
+        'div[contenteditable="true"][title*="message"]',
+        'div[contenteditable="true"]'
+    ];
+    
+    for (const selector of selectors) {
+        const input = document.querySelector(selector);
+        if (input) {
+            console.log('APYSKY: Selector encontrado:', selector);
+            return input;
+        }
     }
-
-    // Hacer clic en el campo de entrada para enfocarlo
-    chatInput.click();
-    
-    // Establecer el mensaje
-    chatInput.textContent = message;
-    
-    // Disparar eventos de entrada para que WhatsApp detecte el cambio
-    const inputEvent = new Event('input', { bubbles: true });
-    chatInput.dispatchEvent(inputEvent);
-    
-    // Enviar el mensaje (simular presionar Enter)
-    const enterEvent = new KeyboardEvent('keydown', {
-      key: 'Enter',
-      code: 'Enter',
-      keyCode: 13,
-      which: 13,
-      bubbles: true,
-    });
-    
-    chatInput.dispatchEvent(enterEvent);
-    
-    console.log('APYSKY: Mensaje enviado correctamente');
-    return true;
-  } catch (error) {
-    console.error('APYSKY: Error al enviar mensaje:', error);
-    return false;
-  }
+    console.log('APYSKY: No se encontró ningún campo de entrada con los selectores');
+    return null;
 }
 
-// Escuchar mensajes del background script
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  console.log('APYSKY: Mensaje recibido en content script:', request);
-  
-  if (request.action === 'SEND_MESSAGE') {
-    const { message, to } = request.payload;
-    
-    // Verificar si estamos en el chat correcto
-    const currentChat = getCurrentChatNumber();
-    const targetChat = to.replace(/[^0-9]/g, ''); // Limpiar el número
-    
-    if (currentChat && currentChat.includes(targetChat)) {
-      // Estamos en el chat correcto, enviar el mensaje
-      sendMessageToCurrentChat(message)
-        .then(success => {
-          sendResponse({ success, error: success ? null : 'No se pudo enviar el mensaje' });
+// Función para esperar que un elemento esté disponible
+function waitForElement(selector, timeout = 5000) {
+    return new Promise((resolve, reject) => {
+        if (document.querySelector(selector)) {
+            return resolve(document.querySelector(selector));
+        }
+
+        const observer = new MutationObserver(() => {
+            if (document.querySelector(selector)) {
+                observer.disconnect();
+                resolve(document.querySelector(selector));
+            }
         });
-      return true; // Mantener el mensaje abierto para la respuesta asíncrona
-    } else {
-      // Necesitamos cambiar de chat
-      // Esto es más complejo y podría requerir navegación en la interfaz
-      sendResponse({ 
-        success: false, 
-        error: 'No se pudo cambiar al chat de destino. Por favor, abre el chat manualmente.' 
-      });
-    }
-  }
-  
-  // Para otros tipos de mensajes, responder con un error
-  if (request.action) {
-    sendResponse({ 
-      success: false, 
-      error: `Acción no soportada: ${request.action}` 
+
+        observer.observe(document.body, {
+            childList: true,
+            subtree: true
+        });
+
+        setTimeout(() => {
+            observer.disconnect();
+            reject(new Error(`Tiempo de espera agotado para el selector: ${selector}`));
+        }, timeout);
     });
-  }
-  
-  return true; // Mantener el mensaje abierto para respuestas asíncronas
+}
+
+// Función para simular la escritura
+async function simulateTyping(element, text) {
+    if (!element) {
+        console.error('APYSKY: No se puede escribir en un elemento nulo');
+        return false;
+    }
+
+    try {
+        // Enfocar y hacer clic en el campo
+        element.focus();
+        element.click();
+        
+        // Limpiar el contenido existente
+        element.textContent = '';
+        
+        // Disparar evento de entrada
+        const inputEvent = new Event('input', { bubbles: true });
+        element.dispatchEvent(inputEvent);
+        
+        // Establecer el texto directamente (más confiable)
+        element.textContent = text;
+        
+        // Disparar evento de entrada nuevamente
+        element.dispatchEvent(inputEvent);
+        
+        return true;
+    } catch (error) {
+        console.error('APYSKY: Error al simular escritura:', error);
+        return false;
+    }
+}
+
+// Función para enviar mensaje
+async function sendMessageToCurrentChat(phone, message) {
+    try {
+        console.log('APYSKY: Intentando enviar mensaje a:', phone);
+        
+        // 1. Abrir la conversación con el número
+        const chatUrl = `https://web.whatsapp.com/send?phone=${phone.replace(/\D/g, '')}`;
+        window.open(chatUrl, '_blank');
+        
+        // 2. Esperar a que se cargue el campo de entrada
+        const chatInput = await waitForElement('div[contenteditable="true"][data-tab="10"]')
+            .catch(err => {
+                console.error('APYSKY: Error esperando el campo de entrada:', err);
+                return null;
+            });
+        
+        if (!chatInput) {
+            console.error('APYSKY: No se pudo encontrar el campo de entrada');
+            return false;
+        }
+
+        // 3. Escribir el mensaje
+        const typingSuccess = await simulateTyping(chatInput, message);
+        if (!typingSuccess) {
+            console.error('APYSKY: No se pudo escribir el mensaje');
+            return false;
+        }
+
+        // 4. Enviar el mensaje (usando Enter)
+        const enterEvent = new KeyboardEvent('keydown', {
+            key: 'Enter',
+            code: 'Enter',
+            keyCode: 13,
+            which: 13,
+            bubbles: true,
+            cancelable: true
+        });
+        
+        chatInput.dispatchEvent(enterEvent);
+        console.log('APYSKY: Mensaje enviado con éxito');
+        return true;
+        
+    } catch (error) {
+        console.error('APYSKY: Error al enviar mensaje:', error);
+        return false;
+    }
+}
+
+// Escuchar mensajes del background
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    if (request.action === 'sendMessage' && request.phone && request.message) {
+        console.log('APYSKY: Recibido mensaje para enviar a:', request.phone);
+        
+        // Usar una promesa para manejar la respuesta asíncrona
+        const promise = sendMessageToCurrentChat(request.phone, request.message);
+        
+        // Enviar la respuesta cuando la promesa se resuelva
+        promise.then(success => {
+            sendResponse({ success });
+        }).catch(error => {
+            console.error('APYSKY: Error en el envío:', error);
+            sendResponse({ success: false, error: error.message });
+        });
+        
+        // Devolver true para indicar que la respuesta será asíncrona
+        return true;
+    }
 });
 
-// Notificar que el content script está listo
-console.log('APYSKY: Content Script listo');
+console.log('APYSKY: Content script completamente cargado');

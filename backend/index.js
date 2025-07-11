@@ -1,78 +1,45 @@
 const express = require('express');
-const cors = require('cors');
 const mongoose = require('mongoose');
-const connectDB = require('./config/db');
+const cors = require('cors');
+const dotenv = require('dotenv');
+const jwt = require('jsonwebtoken');
+const bcrypt = require('bcryptjs');
+const User = require('./models/User');
 const ScheduledMessage = require('./models/ScheduledMessage');
+const connectDB = require('./config/db');
 
-// Inicializar la aplicación
+// Configuración
+if (process.env.NODE_ENV !== 'production') {
+  dotenv.config();
+}
+
 const app = express();
+const PORT = process.env.PORT || 5000;
 
-// Conectar a la base de datos
+// Middleware
+app.use(cors({
+  origin: process.env.NODE_ENV === 'production' 
+    ? ['https://tudominio.com', 'chrome-extension://' + process.env.EXTENSION_ID]
+    : 'http://localhost:3000'
+}));
+app.use(express.json());
+
+// Conexión a MongoDB
 connectDB();
 
-// Middlewares
-app.use(cors()); // Habilitar CORS
-app.use(express.json({ limit: '50mb' })); // Para manejar JSON grandes (imágenes en base64)
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+// Middleware de autenticación
+const authenticateToken = (req, res, next) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+  
+  if (!token) return res.sendStatus(401);
 
-/**
- * @route   GET /api/status
- * @desc    Verificar estado del servidor
- * @access  Public
- */
-app.get('/api/status', (req, res) => {
-  res.json({ 
-    status: 'active',
-    mongo: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
-    timestamp: new Date().toISOString()
+  jwt.verify(token, process.env.JWT_SECRET || 'your_jwt_secret', (err, user) => {
+    if (err) return res.sendStatus(403);
+    req.user = user;
+    next();
   });
-});
-
-/**
- * @route   POST /api/messages
- * @desc    Crear un nuevo mensaje programado
- * @access  Public
- */
-app.post('/api/messages', async (req, res) => {
-  try {
-    const { to, message, scheduledDate, media, mediaType, caption, delay, templateId } = req.body;
-    
-    if (!to || !message || !scheduledDate) {
-      return res.status(400).json({ error: 'Faltan campos requeridos' });
-    }
-
-    const newMessage = new ScheduledMessage({
-      to,
-      message,
-      scheduledDate: new Date(scheduledDate),
-      media: media || null,
-      mediaType: media && mediaType ? mediaType : null,
-      caption: caption || '',
-      delay: delay || 0,
-      templateId: templateId || null,
-      status: 'pending',
-      sent: false
-    });
-
-    await newMessage.save();
-    
-    // Emitir evento de nuevo mensaje programado (para WebSocket en el futuro)
-    // io.emit('new_scheduled_message', newMessage);
-    
-    res.status(201).json({
-      success: true,
-      message: 'Mensaje programado correctamente',
-      data: newMessage
-    });
-  } catch (error) {
-    console.error('Error al programar mensaje:', error);
-    res.status(500).json({ 
-      success: false,
-      error: 'Error al programar el mensaje',
-      details: process.env.NODE_ENV === 'development' ? error.message : null
-    });
-  }
-});
+};
 
 /**
  * @route   GET /api/messages

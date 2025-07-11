@@ -4,13 +4,11 @@ require('dotenv').config();
 const connectDB = async () => {
   try {
     const conn = await mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/whatsapp-scheduler', {
-      useNewUrlParser: true,
-      useUnifiedTopology: true,
       serverSelectionTimeoutMS: 5000, // Tiempo de espera para la conexión inicial
       socketTimeoutMS: 45000, // Tiempo de espera para operaciones
     });
 
-    console.log(`✅ MongoDB conectado: ${conn.connection.host}`.cyan.underline);
+    console.log(`✅ MongoDB conectado: ${conn.connection.host}`);
     
     // Manejar eventos de conexión
     mongoose.connection.on('connected', () => {
@@ -33,7 +31,7 @@ const connectDB = async () => {
     });
     
   } catch (error) {
-    console.error(`❌ Error al conectar a MongoDB: ${error.message}`.red.underline.bold);
+    console.error('❌ Error al conectar a MongoDB:', error.message);
     process.exit(1);
   }
 };
