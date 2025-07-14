@@ -1,27 +1,6 @@
 // contentScript.js
 console.log('APYSKY: Content script cargado');
 
-// Función mejorada para encontrar el input de WhatsApp
-function findWhatsAppInput() {
-    // Probar diferentes selectores en orden de prioridad
-    const selectors = [
-        'div[contenteditable="true"][data-tab="10"]',  // Selector principal
-        'div[contenteditable="true"][title*="escribir"]',
-        'div[contenteditable="true"][title*="message"]',
-        'div[contenteditable="true"]'
-    ];
-    
-    for (const selector of selectors) {
-        const input = document.querySelector(selector);
-        if (input) {
-            console.log('APYSKY: Selector encontrado:', selector);
-            return input;
-        }
-    }
-    console.log('APYSKY: No se encontró ningún campo de entrada con los selectores');
-    return null;
-}
-
 // Función para esperar que un elemento esté disponible
 function waitForElement(selector, timeout = 5000) {
     return new Promise((resolve, reject) => {

@@ -218,7 +218,6 @@ app.use((err, req, res, next) => {
 });
 
 // Iniciar el servidor
-const PORT = process.env.PORT || 3000;
 const server = app.listen(PORT, () => {
   console.log(`🚀 Servidor backend corriendo en http://localhost:${PORT}`);
   console.log(`📅 Base de datos: ${mongoose.connection.host}/${mongoose.connection.name}`);

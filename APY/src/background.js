@@ -168,7 +168,7 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
       chrome.runtime.sendMessage({
         action: 'WHATSAPP_CONNECTED',
         tabId: tab.id
-      }).catch(error => {
+      }).catch(() => {
         console.log('APYSKY: No hay listeners para el mensaje WHATSAPP_CONNECTED');
       });
     }
@@ -176,7 +176,7 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
 });
 
 // Escuchar cuando se cierra una pestaña
-chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
+chrome.tabs.onRemoved.addListener((tabId) => {
   if (state.whatsAppTab && state.whatsAppTab.id === tabId) {
     console.log('APYSKY: Pestaña de WhatsApp Web cerrada');
     state.isConnected = false;
@@ -185,7 +185,7 @@ chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
     // Notificar al popup que se perdió la conexión
     chrome.runtime.sendMessage({
       action: 'WHATSAPP_DISCONNECTED'
-    }).catch(error => {
+    }).catch(() => {
       console.log('APYSKY: No hay listeners para el mensaje WHATSAPP_DISCONNECTED');
     });
   }
