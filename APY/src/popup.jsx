@@ -35,6 +35,13 @@ const getTimeRemaining = (scheduledTime) => {
   return `En ${parts.join(' ')}`;
 };
 
+const phoneRegex = /^\+?\d{6,15}$/;
+const parseNumbers = (text) => text.split(/[\n,\s]+/).filter(Boolean);
+const hasValidNumbers = (text) => {
+  const nums = parseNumbers(text);
+  return nums.length > 0 && nums.every((n) => phoneRegex.test(n));
+};
+
 /* ------------------------------------------------------------------
   MODAL PLANTILLAS
 -------------------------------------------------------------------*/
@@ -323,35 +330,6 @@ function Popup() {
     }
   }, []);
 
-  const openWhatsAppWeb = async () => {
-    if (!isExtensionEnvironment()) {
-      window.open('https://web.whatsapp.com', '_blank');
-      return;
-    }
-
-    setConnectionStatus((prev) => ({ ...prev, isLoading: true, error: null }));
-
-    try {
-      const response = await chrome.runtime.sendMessage({ action: 'OPEN_WHATSAPP_WEB' });
-      if (response.success) {
-        setConnectionStatus({
-          isConnected: true,
-          isLoading: false,
-          error: null,
-          whatsAppTab: { id: response.tabId },
-        });
-      } else {
-        throw new Error(response.error || 'Error al abrir WhatsApp Web');
-      }
-    } catch (error) {
-      console.error('Error al abrir WhatsApp Web:', error);
-      setConnectionStatus((prev) => ({
-        ...prev,
-        isLoading: false,
-        error: error.message || 'Error al abrir WhatsApp Web',
-      }));
-    }
-  };
 
   const sendWhatsAppMessage = async (phoneNumber, messageText, isLast = true) => {
     const API_URL = 'http://localhost:5000/api/messages';
@@ -588,88 +566,6 @@ function Popup() {
   /* ------------------------------------------------------------------
      ENVÍO INMEDIATO / PROGRAMAR VIA UI
   ------------------------------------------------------------------*/
-  const handleSend = async (e) => {
-    e.preventDefault();
-
-    if (!numbers.trim()) return setSendStatus({ success: false, message: 'Ingresa al menos un número' });
-    if (!message.trim()) return setSendStatus({ success: false, message: 'Ingresa un mensaje' });
-
-    const numbersList = numbers.split(/[\n,\s]+/).filter(Boolean);
-    if (!numbersList.length) return setSendStatus({ success: false, message: 'No se encontraron números válidos' });
-
-    const now = new Date();
-    const isScheduled = scheduleDate > now;
-
-    if (isScheduled) {
-      const newMsg = {
-        id: Date.now().toString(),
-        name: `Mensaje para ${numbersList.length} contacto${numbersList.length > 1 ? 's' : ''}`,
-        content: message,
-        numbers: numbersList,
-        scheduledTime: scheduleDate.toISOString(),
-        createdAt: new Date().toISOString(),
-        status: 'scheduled',
-      };
-
-      const updated = [...scheduledMessages, newMsg];
-      await setStorageData({ scheduledMessages: updated });
-      setScheduledMessages(updated);
-      setNumbers('');
-      setMessage('');
-      setSendStatus({ success: true, message: `Mensaje programado para ${formatDateTime(scheduleDate)}` });
-      return;
-    }
-
-    /* Envío inmediato */
-    try {
-      let success = 0;
-      let error = 0;
-      for (const num of numbersList) {
-        const res = await sendWhatsAppMessage(num, message);
-        if (res.success) success += 1;
-        else error += 1;
-        await new Promise((r) => setTimeout(r, 1000)); // pequeño delay
-      }
-      setSendStatus({ success: error === 0, message: `Enviados: ${success}, Fallidos: ${error}` });
-      if (error === 0) {
-        setNumbers('');
-        setMessage('');
-      }
-    } catch (err) {
-      console.error(err);
-      setSendStatus({ success: false, message: 'Error al enviar los mensajes' });
-    }
-  };
-
-  const scheduleMessage = async () => {
-    if (!numbers.trim() || !message.trim()) return alert('Faltan datos');
-
-    const nums = numbers.split('\n').map((n) => n.trim()).filter(Boolean);
-    const newMsg = {
-      id: Date.now().toString(),
-      name: `Mensaje para ${nums.length} contacto${nums.length > 1 ? 's' : ''}`,
-      content: message,
-      numbers: nums,
-      scheduledTime: scheduleDate.toISOString(),
-      createdAt: new Date().toISOString(),
-      status: 'scheduled',
-    };
-
-    const updated = [...scheduledMessages, newMsg];
-    await setStorageData({ scheduledMessages: updated });
-    setScheduledMessages(updated);
-    setNumbers('');
-    setMessage('');
-
-    if (chrome.notifications) {
-      chrome.notifications.create({
-        type: 'basic',
-        iconUrl: 'icon128.png',
-        title: 'Mensaje Programado',
-        message: `Mensaje programado para ${formatDateTime(scheduleDate)}`,
-      });
-    }
-  };
 
   const cancelScheduledMessage = async (id) => {
     if (!window.confirm('¿Estás seguro de cancelar este mensaje programado?')) return;
@@ -789,6 +685,17 @@ function Popup() {
             {showTemplates ? 'Ocultar' : 'Ver'} Plantillas
           </button>
         </div>
+      </div>
+      <div
+        style={{
+          marginBottom: '10px',
+          fontSize: '12px',
+          color: connectionStatus.isConnected ? 'green' : '#b30000',
+        }}
+      >
+        {connectionStatus.isConnected
+          ? 'Conectado a WhatsApp Web'
+          : connectionStatus.error || 'No conectado a WhatsApp Web'}
       </div>
 
       {/* CUERPO */}
@@ -1100,7 +1007,7 @@ function Popup() {
             </label>
             <textarea
               value={numbers}
-              onChange={(e) => setNumbers(e.target.value)}
+              onChange={(e) => setNumbers(e.target.value.replace(/,\s*/g, '\n'))}
               placeholder="Ej: +51987654321\n+51987654322"
               style={{
                 width: '100%',
@@ -1181,10 +1088,7 @@ function Popup() {
                 setScheduleDate(new Date());
                 
                 // Obtener números de teléfono
-                const phoneNumbers = numbers
-                  .split('\n')
-                  .map(num => num.trim())
-                  .filter(num => num);
+                const phoneNumbers = parseNumbers(numbers);
                 
                 if (phoneNumbers.length === 0) {
                   setSendStatus({ success: false, message: 'No hay números de teléfono válidos' });
@@ -1196,19 +1100,19 @@ function Popup() {
                   await sendBulkMessages(phoneNumbers, message);
                 }
               }}
-              disabled={!message.trim() || !numbers.trim() || isSending}
+              disabled={!message.trim() || !hasValidNumbers(numbers) || isSending}
               style={{
                 flex: 1,
                 padding: '10px',
                 backgroundColor:
-                  !message.trim() || !numbers.trim() || isSending
+                  !message.trim() || !hasValidNumbers(numbers) || isSending
                     ? '#ccc'
                     : '#b30000',
                 color: 'white',
                 border: 'none',
                 borderRadius: '4px',
                 cursor:
-                  !message.trim() || !numbers.trim() || isSending
+                  !message.trim() || !hasValidNumbers(numbers) || isSending
                     ? 'not-allowed'
                     : 'pointer',
                 fontSize: '14px',
@@ -1225,10 +1129,7 @@ function Popup() {
             <button
               onClick={async () => {
                 // Obtener números de teléfono
-                const phoneNumbers = numbers
-                  .split('\n')
-                  .map(num => num.trim())
-                  .filter(num => num);
+                const phoneNumbers = parseNumbers(numbers);
                 
                 if (phoneNumbers.length === 0) {
                   setSendStatus({ success: false, message: 'No hay números de teléfono válidos' });
@@ -1244,17 +1145,17 @@ function Popup() {
                   });
                 }
               }}
-              disabled={!message.trim() || !numbers.trim() || isSending}
+                disabled={!message.trim() || !hasValidNumbers(numbers) || isSending}
               style={{
                 padding: '8px 12px',
                 backgroundColor: '#f9f0ff',
                 color: '#722ed1',
                 border: '1px solid #d3adf7',
                 borderRadius: '4px',
-                cursor:
-                  !message.trim() || !numbers.trim() || isSending
-                    ? 'not-allowed'
-                    : 'pointer',
+                  cursor:
+                    !message.trim() || !hasValidNumbers(numbers) || isSending
+                      ? 'not-allowed'
+                      : 'pointer',
                 fontSize: '12px',
                 fontWeight: 'bold',
                 display: 'flex',
@@ -1266,10 +1167,25 @@ function Popup() {
               title="Programar para más tarde"
             >
               <span>⏰</span> Programar
-            </button>
+              </button>
+            </div>
+            {sendStatus.message && (
+              <div
+                style={{
+                  marginTop: '10px',
+                  color:
+                    sendStatus.success === null
+                      ? '#333'
+                      : sendStatus.success
+                        ? 'green'
+                        : 'red',
+                }}
+              >
+                {sendStatus.message}
+              </div>
+            )}
           </div>
-        </div>
-      )}
+        )}
 
       {/* -----------------------------------------------------------
          MODALES AUXILIARES
