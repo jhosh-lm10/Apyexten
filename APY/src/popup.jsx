@@ -358,7 +358,7 @@ function Popup() {
         throw new Error(data.error || 'Error al enviar el mensaje');
       }
       
-      const statusMessage = `Mensaje programado para ${phoneNumber} correctamente`;
+      const statusMessage = `Mensaje enviado a ${phoneNumber}`;
       setSendStatus({ success: true, message: statusMessage });
       console.log(statusMessage, data);
       
