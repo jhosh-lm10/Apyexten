@@ -567,6 +567,22 @@ function Popup() {
      ENVÍO INMEDIATO / PROGRAMAR VIA UI
   ------------------------------------------------------------------*/
 
+  const scheduleMessage = async ({ numbers: nums, content, scheduledTime }) => {
+    const plain = content.replace(/<[^>]+>/g, '');
+    const newMessage = {
+      id: Date.now().toString(),
+      name: plain.length > 30 ? `${plain.slice(0, 27)}...` : plain,
+      numbers: nums,
+      content,
+      scheduledTime: scheduledTime.toISOString(),
+      createdAt: new Date().toISOString(),
+    };
+
+    const updated = [...scheduledMessages, newMessage];
+    await setStorageData({ scheduledMessages: updated });
+    setScheduledMessages(updated);
+  };
+
   const cancelScheduledMessage = async (id) => {
     if (!window.confirm('¿Estás seguro de cancelar este mensaje programado?')) return;
     const updated = scheduledMessages.filter((m) => m.id !== id);
@@ -1128,20 +1144,23 @@ function Popup() {
             
             <button
               onClick={async () => {
-                // Obtener números de teléfono
                 const phoneNumbers = parseNumbers(numbers);
-                
+
                 if (phoneNumbers.length === 0) {
                   setSendStatus({ success: false, message: 'No hay números de teléfono válidos' });
                   return;
                 }
-                
-                // Mostrar confirmación
+
                 if (window.confirm(`¿Estás seguro de programar este mensaje para ${formatDateTime(scheduleDate)}?`)) {
-                  // Aquí iría la lógica para programar los mensajes
-                  setSendStatus({ 
-                    success: true, 
-                    message: `Mensaje programado para ${formatDateTime(scheduleDate)}` 
+                  await scheduleMessage({
+                    numbers: phoneNumbers,
+                    content: message,
+                    scheduledTime: scheduleDate,
+                  });
+
+                  setSendStatus({
+                    success: true,
+                    message: `Mensaje programado para ${formatDateTime(scheduleDate)}`,
                   });
                 }
               }}
