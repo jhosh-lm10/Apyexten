@@ -1,206 +1,207 @@
-// Background Script para la extensión Apysky
-console.log('APYSKY: Background Script cargado');
+// background.js - Service Worker de la extensión
 
-// Almacenar el estado de la extensión
-const state = {
-  isConnected: false,
-  currentTab: null,
-  whatsAppTab: null
-};
+// Almacena la pestaña activa de WhatsApp Web
+let whatsAppTab = null;
 
-// Verificar si una URL es de WhatsApp Web
-function isWhatsAppWebUrl(url) {
-  return url && url.startsWith('https://web.whatsapp.com/');
-}
-
-// Encontrar la pestaña de WhatsApp Web abierta
-async function findWhatsAppTab() {
+/**
+ * Busca una pestaña de WhatsApp Web abierta
+ * @param {Function} [callback] - Función de retorno opcional
+ * @returns {Promise<chrome.tabs.Tab>}
+ */
+async function findWhatsAppTab(callback) {
   try {
     const tabs = await chrome.tabs.query({ url: 'https://web.whatsapp.com/*' });
-    return tabs.length > 0 ? tabs[0] : null;
-  } catch (error) {
-    console.error('APYSKY: Error al buscar pestaña de WhatsApp:', error);
-    return null;
-  }
-}
-
-// Abrir WhatsApp Web en una nueva pestaña
-async function openWhatsAppWeb() {
-  try {
-    console.log('APYSKY: Abriendo WhatsApp Web...');
-    const tab = await chrome.tabs.create({ url: 'https://web.whatsapp.com' });
-    state.whatsAppTab = tab;
+    const tab = tabs.length > 0 ? tabs[0] : null;
+    if (callback) callback(tab);
     return tab;
   } catch (error) {
-    console.error('APYSKY: Error al abrir WhatsApp Web:', error);
+    console.error('Error al buscar pestaña de WhatsApp:', error);
+    if (callback) callback(null);
     return null;
   }
 }
 
-// Enviar un mensaje a través de WhatsApp Web
-async function sendMessage(phoneNumber, message) {
-  try {
-    // Buscar la pestaña de WhatsApp Web
-    let tab = await findWhatsAppTab();
-    
-    // Si no está abierta, abrir una nueva
+/**
+ * Maneja el envío de mensajes usando WAPI
+ * @param {Object} request - Datos del mensaje
+ * @param {Object} sender - Información del remitente
+ * @param {Function} sendResponse - Función para enviar respuesta
+ */
+function handleSendMessage(request, sender, sendResponse) {
+  const phone = (request.phone || '').replace(/\D/g, '');
+  const text = (request.message || '').trim();
+  const jid = `${phone}@c.us`;
+
+  // Responder de inmediato para mantener el puerto abierto
+  sendResponse({ success: true });
+  
+  // Validar datos
+  if (!phone) {
+    console.error('Número de teléfono no válido');
+    return;
+  }
+  
+  if (!text) {
+    console.error('El mensaje no puede estar vacío');
+    return;
+  }
+  
+  console.log(`APYSKY: Preparando envío a ${phone}`);
+  
+  // Preparar el payload para WAPI
+  const payload = { action: 'wapiSend', jid, text };
+  
+  // Función para manejar el envío del mensaje
+  const sendWAPIMessage = (tab) => {
     if (!tab) {
-      tab = await openWhatsAppWeb();
-      if (!tab) {
-        throw new Error('No se pudo abrir WhatsApp Web');
-      }
+      console.error('No se encontró una pestaña de WhatsApp Web');
+      return;
     }
-    
-    // Asegurarse de que la pestaña esté activa
-    await chrome.tabs.update(tab.id, { active: true });
     
     // Enviar el mensaje al content script
-    const response = await chrome.tabs.sendMessage(tab.id, {
-      action: 'SEND_MESSAGE',
-      payload: {
-        to: phoneNumber,
-        message: message
+    chrome.tabs.sendMessage(tab.id, payload, (response) => {
+      if (chrome.runtime.lastError) {
+        console.error('Error al enviar mensaje a la pestaña:', chrome.runtime.lastError);
+      } else if (response && !response.success) {
+        console.error('Error al enviar mensaje:', response.error);
       }
     });
-    
-    if (!response || !response.success) {
-      throw new Error(response?.error || 'Error desconocido al enviar el mensaje');
-    }
-    
-    return { success: true };
-  } catch (error) {
-    console.error('APYSKY: Error en sendMessage:', error);
-    return { 
-      success: false, 
-      error: error.message || 'Error al enviar el mensaje' 
-    };
-  }
-}
-
-// Escuchar mensajes del popup o de otras partes de la extensión
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  console.log('APYSKY: Mensaje recibido en background:', request);
+  };
   
-  // Manejar diferentes tipos de acciones
-  if (request.action === 'SEND_MESSAGE') {
-    const { phoneNumber, message } = request.payload;
-    
-    // Enviar el mensaje y responder cuando termine
-    sendMessage(phoneNumber, message)
-      .then(result => sendResponse(result))
-      .catch(error => sendResponse({ 
-        success: false, 
-        error: error.message || 'Error al enviar el mensaje' 
-      }));
-    
-    return true; // Mantener el mensaje abierto para la respuesta asíncrona
-  }
-  
-  // Verificar el estado de conexión con WhatsApp Web
-  if (request.action === 'CHECK_CONNECTION') {
-    findWhatsAppTab()
-      .then(tab => {
-        const isConnected = !!tab;
-        state.isConnected = isConnected;
-        sendResponse({ 
-          success: true, 
-          isConnected,
-          tabId: tab?.id
-        });
-      })
-      .catch(error => {
-        console.error('APYSKY: Error al verificar conexión:', error);
-        sendResponse({ 
-          success: false, 
-          error: 'Error al verificar la conexión',
-          isConnected: false
-        });
-      });
-    
-    return true; // Mantener el mensaje abierto para la respuesta asíncrona
-  }
-  
-  // Abrir WhatsApp Web
-  if (request.action === 'OPEN_WHATSAPP_WEB') {
-    openWhatsAppWeb()
-      .then(tab => {
-        if (tab) {
-          state.isConnected = true;
-          state.whatsAppTab = tab;
-          sendResponse({ 
-            success: true, 
-            tabId: tab.id 
-          });
-        } else {
-          throw new Error('No se pudo abrir WhatsApp Web');
+  // Buscar una pestaña existente o crear una nueva
+  findWhatsAppTab((tab) => {
+    if (tab) {
+      // Usar la pestaña existente
+      sendWAPIMessage(tab);
+    } else {
+      // Crear una nueva pestaña
+      chrome.tabs.create(
+        { 
+          url: 'https://web.whatsapp.com',
+          active: false 
+        },
+        (newTab) => {
+          whatsAppTab = newTab;
+          
+          // Esperar a que la pestaña esté completamente cargada
+          const onTabUpdated = (tabId, info, updatedTab) => {
+            if (tabId === newTab.id && info.status === 'complete') {
+              chrome.tabs.onUpdated.removeListener(onTabUpdated);
+              
+              // Pequeña espera para asegurar que WAPI esté listo
+              setTimeout(() => {
+                sendWAPIMessage(updatedTab);
+              }, 2000);
+            }
+          };
+          
+          chrome.tabs.onUpdated.addListener(onTabUpdated);
         }
-      })
-      .catch(error => {
-        console.error('APYSKY: Error al abrir WhatsApp Web:', error);
-        sendResponse({ 
-          success: false, 
-          error: error.message || 'Error al abrir WhatsApp Web' 
-        });
-      });
-    
-    return true; // Mantener el mensaje abierto para la respuesta asíncrona
-  }
-  
-  // Para otras acciones no manejadas
-  sendResponse({ 
-    success: false, 
-    error: `Acción no soportada: ${request.action}` 
-  });
-});
-
-// Escuchar cambios en las pestañas
-chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
-  // Verificar si la pestaña actualizada es de WhatsApp Web
-  if (isWhatsAppWebUrl(tab.url)) {
-    console.log('APYSKY: Pestaña de WhatsApp Web actualizada:', tabId, changeInfo.status);
-    
-    // Si la pestaña terminó de cargar
-    if (changeInfo.status === 'complete') {
-      state.isConnected = true;
-      state.whatsAppTab = tab;
-      
-      // Notificar al popup que la conexión está lista
-      chrome.runtime.sendMessage({
-        action: 'WHATSAPP_CONNECTED',
-        tabId: tab.id
-      }).catch(() => {
-        console.log('APYSKY: No hay listeners para el mensaje WHATSAPP_CONNECTED');
-      });
+      );
     }
-  }
-});
-
-// Escuchar cuando se cierra una pestaña
-chrome.tabs.onRemoved.addListener((tabId) => {
-  if (state.whatsAppTab && state.whatsAppTab.id === tabId) {
-    console.log('APYSKY: Pestaña de WhatsApp Web cerrada');
-    state.isConnected = false;
-    state.whatsAppTab = null;
-    
-    // Notificar al popup que se perdió la conexión
-    chrome.runtime.sendMessage({
-      action: 'WHATSAPP_DISCONNECTED'
-    }).catch(() => {
-      console.log('APYSKY: No hay listeners para el mensaje WHATSAPP_DISCONNECTED');
-    });
-  }
-});
-
-// Inicializar el estado de conexión al cargar el background script
-async function init() {
-  console.log('APYSKY: Inicializando estado de conexión...');
-  const tab = await findWhatsAppTab();
-  state.isConnected = !!tab;
-  state.whatsAppTab = tab;
-  console.log('APYSKY: Estado de conexión inicial:', state);
+  });
+  const waURL = `https://web.whatsapp.com/send?phone=${phoneNumber}` +
+                `&text=${encodeURIComponent(message || '')}` +
+                '&type=phone_number&app_absent=0';
+  
+  // Responder de inmediato para evitar el error de puerto cerrado
+  console.log('APYSKY: Enviando respuesta inmediata al popup');
+  sendResponse({ success: true });
+  
+  // Buscar pestaña existente de WhatsApp
+  findWhatsAppTab((tab) => {
+    if (tab) {
+      // Si existe, actualizarla
+      console.log('APYSKY: Actualizando pestaña existente de WhatsApp');
+      chrome.tabs.update(tab.id, { url: waURL, active: false });
+    } else {
+      // Si no existe, crear una nueva
+      console.log('APYSKY: Creando nueva pestaña de WhatsApp');
+      chrome.tabs.create({ url: waURL, active: false });
+    }
+  });
+  
+  // No retornamos nada ya que ya respondimos con sendResponse
 }
 
-// Inicializar cuando se carga el script
-init();
+console.log('APYSKY: Service Worker iniciado correctamente');
 
-console.log('APYSKY: Background Script listo');
+// Manejar mensajes de la interfaz de usuario
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request.action === 'SEND_MESSAGE') {
+    handleSendMessage(request, sender, sendResponse);
+    return true; // Mantener el mensaje abierto para la respuesta asíncrona
+  } else if (request.action === 'CHECK_WHATSAPP_CONNECTION') {
+    checkWhatsAppConnection(sendResponse);
+    return true; // Mantener el mensaje abierto para la respuesta asíncrona
+  }
+});
+
+/**
+ * Verifica la conexión con WhatsApp Web
+ * @param {Function} [callback] - Función de retorno opcional
+ * @returns {Promise<{isConnected: boolean, tabId?: number, error?: string}>}
+ */
+async function checkWhatsAppConnection(callback) {
+  try {
+    const tab = await findWhatsAppTab();
+    
+    if (!tab) {
+      const response = { isConnected: false, error: 'No se encontró una pestaña de WhatsApp Web abierta' };
+      if (callback) callback(response);
+      return response;
+    }
+    
+    // Verificar si la pestaña está cargada
+    if (tab.status !== 'complete') {
+      const response = { 
+        isConnected: false, 
+        tabId: tab.id,
+        error: 'WhatsApp Web está cargando, por favor espere' 
+      };
+      if (callback) callback(response);
+      return response;
+    }
+    
+    // Enviar mensaje al content script para verificar la conexión
+    try {
+      const response = await new Promise((resolve) => {
+        chrome.tabs.sendMessage(tab.id, { action: 'CHECK_CONNECTION' }, (response) => {
+          if (chrome.runtime.lastError) {
+            resolve({ 
+              isConnected: false, 
+              tabId: tab.id,
+              error: chrome.runtime.lastError.message 
+            });
+          } else {
+            resolve(response || { 
+              isConnected: false, 
+              tabId: tab.id,
+              error: 'No se pudo verificar la conexión' 
+            });
+          }
+        });
+      });
+      
+      if (callback) callback(response);
+      return { ...response, tabId: tab.id };
+    } catch (error) {
+      console.error('Error al verificar la conexión:', error);
+      const response = { 
+        isConnected: false, 
+        tabId: tab.id,
+        error: 'Error al verificar la conexión: ' + error.message 
+      };
+      if (callback) callback(response);
+      return response;
+    }
+  } catch (error) {
+    console.error('Error en checkWhatsAppConnection:', error);
+    const response = { 
+      isConnected: false, 
+      error: 'Error inesperado: ' + error.message 
+    };
+    if (callback) callback(response);
+    return response;
+  }
+}

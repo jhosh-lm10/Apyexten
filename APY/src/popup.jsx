@@ -1,21 +1,23 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import ReactQuill from 'react-quill';
 import 'react-quill/dist/quill.snow.css';
-import 'react-datepicker/dist/react-datepicker.css';
 import DatePicker from 'react-datepicker';
+import 'react-datepicker/dist/react-datepicker.css';
 import './popup.css';
+import { parsePhoneNumber } from 'libphonenumber-js';
 
 /* ------------------------------------------------------------------
   UTILIDADES
 -------------------------------------------------------------------*/
-const formatDateTime = (date) =>
-  date.toLocaleString('es-ES', {
+const formatDateTime = (date) => {
+  return date.toLocaleString('es-ES', {
     day: '2-digit',
     month: '2-digit',
     year: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
   });
+};
 
 const getTimeRemaining = (scheduledTime) => {
   const now = new Date();
@@ -35,11 +37,57 @@ const getTimeRemaining = (scheduledTime) => {
   return `En ${parts.join(' ')}`;
 };
 
-const phoneRegex = /^\+?\d{6,15}$/;
-const parseNumbers = (text) => text.split(/[\n,\s]+/).filter(Boolean);
+/* ------------------------------------------------------------------
+  VALIDACIÓN DE NÚMEROS DE TELÉFONO
+-------------------------------------------------------------------*/
+const parseNumbers = (text) => {
+  // Eliminar caracteres no numéricos excepto "+"
+  const cleaned = text.replace(/[^\d\+]/g, '');
+  // Separar por saltos de línea, comas o espacios
+  return cleaned.split(/[\n,\s]+/).filter(Boolean).map(num => {
+    try {
+      const phoneNumber = parsePhoneNumber(num);
+      if (!phoneNumber.isValid()) throw new Error('Número no válido');
+      return phoneNumber.formatInternational();
+    } catch {
+      return num;
+    }
+  });
+};
+
+const validatePhone = (phone) => {
+  try {
+    // Intentar parsear el número usando libphonenumber-js
+    const phoneNumber = parsePhoneNumber(phone);
+    if (!phoneNumber.isValid()) {
+      return { valid: false, error: 'Número de teléfono inválido' };
+    }
+    
+    // Formatear el número en formato internacional
+    const formatted = phoneNumber.formatInternational();
+    return { valid: true, phone: formatted };
+  } catch (error) {
+    // Si no se puede parsear, intentar una validación básica
+    const cleaned = phone.replace(/[^\d\+]/g, '');
+    if (cleaned.length < 6 || cleaned.length > 20) {
+      return { valid: false, error: 'Número de teléfono inválido (debe tener entre 6 y 20 dígitos)' };
+    }
+    
+    // Validar formato básico
+    if (!/^(\+\d{1,3})?\d{6,20}$/.test(cleaned)) {
+      return { valid: false, error: 'Formato de número inválido' };
+    }
+    
+    return { valid: true, phone: cleaned };
+  }
+};
+
 const hasValidNumbers = (text) => {
-  const nums = parseNumbers(text);
-  return nums.length > 0 && nums.every((n) => phoneRegex.test(n));
+  const numbers = parseNumbers(text);
+  if (numbers.length === 0) return false;
+  
+  const results = numbers.map(validatePhone);
+  return results.every(result => result.valid);
 };
 
 /* ------------------------------------------------------------------
@@ -151,10 +199,18 @@ const TemplateModal = ({ isOpen, onClose, onSave, template = null }) => {
             onClick={onClose}
             style={{
               padding: '8px 16px',
-              backgroundColor: '#f0f0f0',
-              border: '1px solid #ccc',
               borderRadius: '4px',
               cursor: 'pointer',
+              transition: 'all 0.2s',
+              border: 'none',
+              outline: 'none',
+              fontSize: '14px',
+              backgroundColor: '#f0f0f0',
+              color: '#333',
+              border: '1px solid #ccc',
+              '&:hover': {
+                backgroundColor: '#e0e0e0',
+              },
             }}
           >
             Cancelar
@@ -212,7 +268,7 @@ const customStyles = `
 
 /* ------------------------------------------------------------------
   COMPONENTE PRINCIPAL
--------------------------------------------------------------------*/
+------------------------------------------------------------------*/
 function Popup() {
   /* --------------------
      ESTADOS CONEXIÓN WA
@@ -231,6 +287,37 @@ function Popup() {
   const [message, setMessage] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [sendStatus, setSendStatus] = useState({ success: null, message: '' });
+  
+  // Cargar estado guardado al montar
+  useEffect(() => {
+    const loadFormState = async () => {
+      try {
+        const result = await getStorageData('formState');
+        if (result.formState) {
+          setNumbers(result.formState.numbers || '');
+          setMessage(result.formState.message || '');
+        }
+      } catch (error) {
+        console.error('Error al cargar el estado del formulario:', error);
+      }
+    };
+    
+    loadFormState();
+  }, []);
+  
+  // Guardar estado cuando cambia (con debounce)
+  useEffect(() => {
+    const saveFormState = () => {
+      setStorageData({
+        formState: { numbers, message }
+      }).catch(error => {
+        console.error('Error al guardar el estado del formulario:', error);
+      });
+    };
+    
+    const timer = setTimeout(saveFormState, 500); // Debounce de 500ms
+    return () => clearTimeout(timer);
+  }, [numbers, message]);
 
   /* --------------------
      PLANTILLAS
@@ -262,32 +349,33 @@ function Popup() {
   /* --------------------
      CONFIG EDITOR
   ---------------------*/
-  const modules = useMemo(
-    () => ({
-      toolbar: [
-        [{ header: [1, 2, 3, false] }],
-        ['bold', 'italic', 'underline', 'strike'],
-        [{ list: 'ordered' }, { list: 'bullet' }],
-        ['link', 'image'],
-        ['clean'],
-      ],
-    }),
-    []
-  );
+  const modules = useMemo(() => ({
+  toolbar: [
+    [{ header: [1, 2, 3, false] }],
+    [{ font: [] }],
+    [{ size: ['small', false, 'large', 'huge'] }],
+    ['bold', 'italic', 'underline', 'strike'],
+    [{ list: 'ordered' }, { list: 'bullet' }],
+    [{ align: [] }],
+    ['link', 'image'],
+    ['clean']
+  ]
+}), []);
 
   const formats = [
-    'header',
-    'bold',
-    'italic',
-    'underline',
-    'strike',
-    'list',
-    'bullet',
-    'link',
-    'image',
-    'color',
-    'background',
-  ];
+  'header',
+  'font',
+  'size',
+  'bold',
+  'italic',
+  'underline',
+  'strike',
+  'list',
+  'bullet',
+  'align',
+  'link',
+  'image',
+];
 
   /* ------------------------------------------------------------------
     HELPERS EXTENSIÓN
@@ -298,206 +386,422 @@ function Popup() {
   /* ------------------------------------------------------------------
     CONEXIÓN WHATSAPP WEB
   ------------------------------------------------------------------*/
+  /**
+   * Verifica la conexión con WhatsApp Web
+   * @returns {Promise<{isConnected: boolean, error?: string}>}
+   */
   const checkWhatsAppConnection = useCallback(async () => {
     if (!isExtensionEnvironment()) {
-      setConnectionStatus((prev) => ({
-        ...prev,
+      const errorMsg = 'No se puede conectar con WhatsApp Web en este entorno';
+      setConnectionStatus({
         isConnected: false,
         isLoading: false,
-        error: 'No se puede conectar con WhatsApp Web en este entorno',
-      }));
-      return;
+        error: errorMsg,
+        lastChecked: new Date().toISOString(),
+        whatsAppTab: null
+      });
+      return { isConnected: false, error: errorMsg };
     }
 
-    setConnectionStatus((prev) => ({ ...prev, isLoading: true, error: null }));
+    setConnectionStatus(prev => ({ ...prev, isLoading: true, error: null }));
 
     try {
-      const response = await chrome.runtime.sendMessage({ action: 'CHECK_CONNECTION' });
+      const response = await new Promise((resolve) => {
+        chrome.runtime.sendMessage(
+          { action: 'CHECK_WHATSAPP_CONNECTION' },
+          (response) => {
+            if (chrome.runtime.lastError) {
+              resolve({ isConnected: false, error: chrome.runtime.lastError.message });
+            } else {
+              resolve(response || { isConnected: false, error: 'No response from background' });
+            }
+          }
+        );
+      });
+
+      if (!response || !response.isConnected) {
+        throw new Error(response?.error || 'No se pudo conectar con WhatsApp Web');
+      }
+
       setConnectionStatus({
         isConnected: response.isConnected,
         isLoading: false,
         error: null,
-        whatsAppTab: response.tabId ? { id: response.tabId } : null,
+        lastChecked: new Date().toISOString(),
+        whatsAppTab: response.tabId ? { id: response.tabId } : null
       });
+
+      return response;
     } catch (error) {
       console.error('Error al verificar la conexión con WhatsApp Web:', error);
+      const errorMessage = error.message || 'Error al conectar con WhatsApp Web';
+      
+      // Mostrar notificación al usuario
+      if (chrome.notifications) {
+        chrome.notifications.create({
+          type: 'basic',
+          iconUrl: 'icon128.png',
+          title: 'Error de Conexión',
+          message: errorMessage,
+          requireInteraction: true
+        });
+      }
+
       setConnectionStatus({
         isConnected: false,
         isLoading: false,
-        error: 'Error al conectar con WhatsApp Web',
-        whatsAppTab: null,
+        error: errorMessage,
+        whatsAppTab: null
       });
+      return { isConnected: false, error: errorMessage };
     }
   }, []);
 
 
   const sendWhatsAppMessage = async (phoneNumber, messageText, isLast = true) => {
-    const API_URL = 'http://localhost:5000/api/messages';
+  try {
+    setIsSending(true);
+    setSendStatus({ success: null, message: `Enviando a ${phoneNumber}...` });
     
-    try {
-      setIsSending(true);
-      setSendStatus({ success: null, message: `Enviando a ${phoneNumber}...` });
-      
-      // Enviar mensaje al backend
-      const response = await fetch(API_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
+    // Verificar si estamos en el entorno de la extensión
+    if (!isExtensionEnvironment()) {
+      throw new Error('No se puede enviar mensajes fuera de la extensión');
+    }
+    
+    // Validar número de teléfono usando libphonenumber
+    const validation = validatePhone(phoneNumber);
+    if (!validation.valid) {
+      throw new Error(validation.error);
+    }
+    const phone = validation.phone;
+    
+    // Verificar conexión con WhatsApp Web
+    const connection = await checkWhatsAppConnection();
+    if (!connection.isConnected) {
+      throw new Error(connection.error || 'No se pudo conectar con WhatsApp Web');
+    }
+    
+    // Enviar mensaje a través del service worker
+    return new Promise((resolve) => {
+      chrome.runtime.sendMessage(
+        { 
+          action: 'SEND_MESSAGE',
+          phone: phone,
+          message: messageText
         },
-        body: JSON.stringify({
-          to: phoneNumber,
-          message: messageText,
-          scheduledDate: new Date().toISOString(), // Enviar inmediatamente
-          delay: delayBetweenMessages
-        })
+        (response) => {
+          // Manejar errores de la API de Chrome
+          if (chrome.runtime.lastError) {
+            const errorMessage = `Error de comunicación: ${chrome.runtime.lastError.message}`;
+            console.error('APYSKY: Error de runtime:', errorMessage);
+            
+            // Mostrar notificación más visible
+            if (chrome.notifications) {
+              chrome.notifications.create({
+                type: 'basic',
+                iconUrl: 'icon128.png',
+                title: 'Error de Envío',
+                message: `Error al enviar mensaje a ${phoneNumber}: ${errorMessage}`,
+                requireInteraction: true
+              });
+            }
+            
+            setSendStatus({ success: false, message: errorMessage });
+            resolve({ success: false, error: errorMessage });
+            return;
+          }
+          
+          // Verificar si hay una respuesta válida
+          if (!response || !response.success) {
+            const errorMessage = response?.error || 'No se recibió respuesta del servicio de mensajería';
+            console.error('APYSKY:', errorMessage);
+            
+            // Mostrar notificación más visible
+            if (chrome.notifications) {
+              chrome.notifications.create({
+                type: 'basic',
+                iconUrl: 'icon128.png',
+                title: 'Error de Envío',
+                message: `Error al enviar mensaje a ${phoneNumber}: ${errorMessage}`,
+                requireInteraction: true
+              });
+            }
+            
+            setSendStatus({ success: false, message: errorMessage });
+            resolve({ success: false, error: errorMessage });
+            return;
+          }
+          
+          // Manejar la respuesta del servicio
+          if (response.success) {
+            const statusMessage = `✓ Mensaje enviado a ${phoneNumber}`;
+            console.log('APYSKY:', statusMessage);
+            
+            // Mostrar notificación de éxito
+            if (chrome.notifications) {
+              chrome.notifications.create({
+                type: 'basic',
+                iconUrl: 'icon128.png',
+                title: 'Mensaje Enviado',
+                message: statusMessage,
+                requireInteraction: true
+              });
+            }
+            
+            setSendStatus({ success: true, message: statusMessage });
+            
+            // Si no es el último mensaje, mostramos un estado de espera
+            if (!isLast) {
+              setSendStatus({ 
+                success: null, 
+                message: `Esperando ${delayBetweenMessages} segundos antes del siguiente envío...` 
+              });
+              
+              // Esperamos el tiempo configurado antes de permitir el siguiente envío
+              setTimeout(() => {
+                resolve({ success: true, data: response });
+              }, delayBetweenMessages * 1000);
+              return;
+            }
+            
+            resolve({ success: true, data: response });
+          } else {
+            // Manejar error del servicio
+            const errorMessage = response.error || 'Error desconocido al enviar el mensaje';
+            console.error('APYSKY: Error al enviar mensaje:', errorMessage);
+            
+            // Mostrar notificación más visible
+            if (chrome.notifications) {
+              chrome.notifications.create({
+                type: 'basic',
+                iconUrl: 'icon128.png',
+                title: 'Error de Envío',
+                message: `Error al enviar mensaje a ${phoneNumber}: ${errorMessage}`,
+                requireInteraction: true
+              });
+            }
+            
+            setSendStatus({ 
+              success: false, 
+              message: `Error al enviar a ${phoneNumber}: ${errorMessage}` 
+            });
+            resolve({ success: false, error: errorMessage });
+          }
+        }
+      );
+    });
+    
+  } catch (error) {
+    console.error('APYSKY: Error en sendWhatsAppMessage:', error);
+    const errorMessage = `Error al enviar a ${phoneNumber}: ${error.message || 'Error desconocido'}`;
+    
+    // Mostrar notificación más visible
+    if (chrome.notifications) {
+      chrome.notifications.create({
+        type: 'basic',
+        iconUrl: 'icon128.png',
+        title: 'Error de Envío',
+        message: errorMessage,
+        requireInteraction: true
       });
-      
-      const data = await response.json();
-      
-      if (!response.ok) {
-        throw new Error(data.error || 'Error al enviar el mensaje');
-      }
-      
-      const statusMessage = `Mensaje enviado a ${phoneNumber}`;
-      setSendStatus({ success: true, message: statusMessage });
-      console.log(statusMessage, data);
-      
-      // Si no es el último mensaje, mostramos un estado de espera
-      if (!isLast) {
-        setSendStatus({ 
-          success: null, 
-          message: `Esperando ${delayBetweenMessages} segundos antes del siguiente envío...` 
-        });
-        
-        // Esperamos el tiempo configurado antes de permitir el siguiente envío
-        await new Promise(resolve => setTimeout(resolve, delayBetweenMessages * 1000));
-      }
-      
-      return { success: true, data };
-      
-    } catch (error) {
-      console.error('Error al enviar mensaje:', error);
-      const errorMessage = `Error al enviar a ${phoneNumber}: ${error.message || 'Error desconocido'}`;
-      setSendStatus({ success: false, message: errorMessage });
-      return { success: false, error: errorMessage };
-    } finally {
-      if (isLast) {
-        setIsSending(false);
-      }
+    }
+    
+    setSendStatus({ success: false, message: errorMessage });
+    return { success: false, error: errorMessage };
+  } finally {
+    if (isLast) {
+      setIsSending(false);
+    }
+  }
     }
   };
 
   // Función para enviar mensajes a múltiples números con intervalo
-  const sendBulkMessages = async (phoneNumbers, messageText) => {
+  const sendBulkMessages = async (phoneNumbers, messageHtml) => {
     if (!phoneNumbers || !phoneNumbers.length) {
       setSendStatus({ success: false, message: 'No hay números de teléfono para enviar' });
       return { success: false, error: 'No hay números de teléfono' };
     }
 
-    setIsSending(true);
-    setSendStatus({ success: null, message: `Iniciando envío a ${phoneNumbers.length} contactos...` });
-
-    let successCount = 0;
-    const results = [];
-
-    for (let i = 0; i < phoneNumbers.length; i++) {
-      const phone = phoneNumbers[i].trim();
-      if (!phone) continue;
-
-      const isLast = i === phoneNumbers.length - 1;
-      const result = await sendWhatsAppMessage(phone, messageText, isLast);
+    // Verificar si estamos en el entorno de la extensión
+    if (!isExtensionEnvironment()) {
+      const errorMsg = 'No se puede enviar mensajes fuera de la extensión';
+      setSendStatus({ success: false, message: errorMsg });
+      return { success: false, error: errorMsg };
+    }
+    
+    // Convertir el mensaje HTML a texto plano
+    const messageText = typeof messageHtml === 'string' ? 
+      messageHtml.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() : 
+      String(messageHtml || '').trim();
       
-      results.push({ phone, success: result.success, error: result.error });
-      if (result.success) successCount++;
-
-      // Actualizamos el estado con el progreso
-      setSendStatus(prev => ({
-        ...prev,
-        message: `Progreso: ${i + 1}/${phoneNumbers.length} enviados (${successCount} exitosos)`
-      }));
+    if (!messageText) {
+      const errorMsg = 'El mensaje no puede estar vacío';
+      setSendStatus({ success: false, message: errorMsg });
+      return { success: false, error: errorMsg };
     }
 
-    const finalMessage = `
-      Envío completado: 
-      • Total: ${phoneNumbers.length}
-      • Exitosos: ${successCount}
-      • Fallidos: ${phoneNumbers.length - successCount}
-    `;
-    
-    setSendStatus({
-      success: successCount > 0,
-      message: finalMessage
-    });
-    
-    setIsSending(false);
-    return { success: successCount > 0, results };
-  };
-
-  /* ------------------------------------------------------------------
-     CARGA INICIAL
-  ------------------------------------------------------------------*/
-  useEffect(() => {
-    checkWhatsAppConnection();
-
-    const handleMessage = (message) => {
-      if (message.action === 'WHATSAPP_CONNECTED') {
-        setConnectionStatus({
-          isConnected: true,
-          isLoading: false,
-          error: null,
-          whatsAppTab: { id: message.tabId },
-        });
-      } else if (message.action === 'WHATSAPP_DISCONNECTED') {
-        setConnectionStatus({
-          isConnected: false,
-          isLoading: false,
-          error: 'Se perdió la conexión con WhatsApp Web',
-          whatsAppTab: null,
-        });
+    try {
+      // Verificar la conexión con WhatsApp Web
+      const connection = await checkWhatsAppConnection();
+      if (!connection.isConnected) {
+        const errorMsg = 'No se pudo conectar con WhatsApp Web. Por favor, abre WhatsApp Web en tu navegador.';
+        setSendStatus({ success: false, message: errorMsg });
+        return { success: false, error: errorMsg };
       }
-    };
+      
+      // Iniciar envío
+      setIsSending(true);
+      const delayBetweenMessages = 3500; // 3.5 segundos
+      let successfulSends = 0;
+      let failedSends = 0;
+      
+      // Procesar cada número
+      for (let i = 0; i < phoneNumbers.length; i++) {
+        const phone = phoneNumbers[i].trim();
+        if (!phone) continue;
+        
+        // Validar número antes de enviar
+        const validation = validatePhone(phone);
+        if (!validation.valid) {
+          failedSends++;
+          console.error(`Número inválido: ${phone} - ${validation.error}`);
+          continue;
+        }
 
-    if (isExtensionEnvironment()) {
-      chrome.runtime.onMessage.addListener(handleMessage);
-    }
-
-    return () => {
-      if (isExtensionEnvironment()) {
-        chrome.runtime.onMessage.removeListener(handleMessage);
+        const phoneNumber = validation.phone;
+        
+        // Actualizar estado
+        setSendStatus({ 
+          success: true, 
+          message: `Enviando a ${i + 1}/${phoneNumbers.length}: ${phoneNumber}` 
+        });
+        
+        try {
+          // Enviar mensaje a través del background script
+          await new Promise((resolve, reject) => {
+            chrome.runtime.sendMessage(
+              { 
+                action: 'SEND_MESSAGE',
+                phone: phoneNumber,
+                message: messageText
+              },
+              (response) => {
+                if (chrome.runtime.lastError) {
+                  reject(new Error(chrome.runtime.lastError.message));
+                } else if (response && !response.success) {
+                  reject(new Error(response.error || 'Error desconocido al enviar el mensaje'));
+                } else {
+                  resolve();
+                }
+              }
+            );
+          });
+          
+          successfulSends++;
+          console.log(`Mensaje enviado a ${phoneNumber} (${i + 1}/${phoneNumbers.length})`);
+          
+        } catch (error) {
+          failedSends++;
+          console.error(`Error al enviar a ${phoneNumber}:`, error);
+          
+          // Mostrar notificación de error
+          const notification = new Notification('Error de envío', {
+            body: `Error al enviar a ${phoneNumber}: ${error.message}\n` +
+                  `Enviados: ${successfulSends}, Fallidos: ${failedSends}`,
+            icon: 'icons/icon128.png'
+          });
+          
+          // Continuar automáticamente después de 3 segundos
+          await new Promise(resolve => setTimeout(resolve, 3000));
+        }
+        
+        // Esperar antes del siguiente envío (excepto después del último)
+        if (i < phoneNumbers.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, delayBetweenMessages));
+        }
       }
-    };
-  }, [checkWhatsAppConnection]);
-
-  /* ------------------------------------------------------------------
-     STORAGE HELPERS
-  ------------------------------------------------------------------*/
-  const getStorageData = async (keys) => {
-    if (isExtensionEnvironment()) return chrome.storage.local.get(keys);
-
-    const result = {};
-    if (Array.isArray(keys)) {
-      keys.forEach((key) => {
-        const value = localStorage.getItem(key);
-        if (value !== null) result[key] = JSON.parse(value);
+      
+      // Mostrar resumen
+      const statusMsg = `Envío completado. ` +
+        `Enviados: ${successfulSends}, Fallidos: ${failedSends}`;
+      
+      setSendStatus({ 
+        success: failedSends === 0, 
+        message: statusMsg 
       });
-    } else if (typeof keys === 'string') {
-      const value = localStorage.getItem(keys);
-      if (value !== null) result[keys] = JSON.parse(value);
-    } else if (keys === null) {
-      for (let i = 0; i < localStorage.length; i += 1) {
-        const key = localStorage.key(i);
-        result[key] = JSON.parse(localStorage.getItem(key));
-      }
+      
+      setIsSending(false);
+      return { 
+        success: failedSends === 0, 
+        message: statusMsg,
+        stats: { sent: successfulSends, failed: failedSends }
+      };
+      
+    } catch (error) {
+      console.error('Error inesperado al enviar mensajes:', error);
+      
+      const errorMsg = `Error inesperado: ${error.message || 'Error desconocido'}`;
+      setSendStatus({ 
+        success: false, 
+        message: errorMsg 
+      });
+      
+      setIsSending(false);
+      return { 
+        success: false, 
+        error: errorMsg 
+      };
     }
-    return result;
   };
 
-  const setStorageData = async (data) => {
-    if (isExtensionEnvironment()) return chrome.storage.local.set(data);
-
-    Object.entries(data).forEach(([key, value]) => localStorage.setItem(key, JSON.stringify(value)));
-  };
-
+  const checkWhatsAppConnection = useCallback(async () => {
+    if (!isExtensionEnvironment()) {
+      setConnectionStatus({
+        isConnected: false,
+        isLoading: false,
+        error: 'No se puede conectar con WhatsApp Web en este entorno',
+        lastChecked: new Date().toISOString(),
+        whatsAppTab: null
+      });
+      return { isConnected: false, error: 'No se puede conectar con WhatsApp Web en este entorno' };
+    }
+  
+    setConnectionStatus(prev => ({ ...prev, isLoading: true, error: null }));
+  
+    try {
+      const response = await new Promise((resolve) => {
+        chrome.runtime.sendMessage(
+          { action: 'CHECK_WHATSAPP_CONNECTION' },
+          (response) => resolve(response || { isConnected: false, error: 'No response from background' })
+        );
+      });
+  
+      if (!response.isConnected) {
+        throw new Error('No se pudo conectar con WhatsApp Web');
+      }
+  
+      setConnectionStatus({
+        isConnected: response.isConnected,
+        isLoading: false,
+        error: null,
+        lastChecked: new Date().toISOString(),
+        whatsAppTab: response.tabId ? { id: response.tabId } : null
+      });
+  
+      return response;
+    } catch (error) {
+      console.error('Error al verificar la conexión con WhatsApp Web:', error);
+      setConnectionStatus({
+        isConnected: false,
+        isLoading: false,
+        error: error.message,
+        whatsAppTab: null
+      });
+      return { isConnected: false, error: error.message };
+    }
+  }, []);
+  
   /* ------------------------------------------------------------------
      CARGAR PLANTILLAS Y PROGRAMADOS
   ------------------------------------------------------------------*/
@@ -634,27 +938,128 @@ function Popup() {
 
   const importTemplates = () => {
     try {
-      const imported = JSON.parse(importData);
-      if (!Array.isArray(imported)) throw new Error('El archivo no contiene un array de plantillas válido');
-      const valid = imported.filter((t) => t && typeof t === 'object' && 'name' in t && 'content' in t);
-      if (!valid.length) throw new Error('No se encontraron plantillas válidas');
+      // Validar que el contenido no esté vacío
+      if (!importData.trim()) {
+        throw new Error('No se ha seleccionado ningún archivo');
+      }
 
-      const existingIds = new Set(templates.map((t) => t.id));
-      const merged = [...templates, ...valid.filter((t) => !existingIds.has(t.id))];
-      setTemplates(merged);
-      setStorageData({ templates: merged });
+      // Parsear el JSON
+      const imported = JSON.parse(importData);
+      
+      // Validar estructura del JSON
+      if (!Array.isArray(imported)) {
+        throw new Error('El archivo no contiene un array de plantillas válido');
+      }
+
+      // Validar cada plantilla
+      const validTemplates = imported.filter(t => {
+        if (!t || typeof t !== 'object') return false;
+        if (!t.name || typeof t.name !== 'string' || t.name.trim().length < 1) return false;
+        if (!t.content || typeof t.content !== 'string' || t.content.trim().length < 1) return false;
+        return true;
+      });
+
+      if (validTemplates.length === 0) {
+        throw new Error('No se encontraron plantillas válidas en el archivo');
+      }
+
+      // Verificar duplicados
+      const existingIds = new Set(templates.map(t => t.id));
+      const newTemplates = validTemplates.map(template => ({
+        ...template,
+        id: template.id ? template.id : Date.now().toString(),
+        createdAt: template.createdAt || new Date().toISOString()
+      })).filter(template => !existingIds.has(template.id));
+
+      const updatedTemplates = [...templates, ...newTemplates];
+      
+      // Guardar en estado y almacenamiento
+      setTemplates(updatedTemplates);
+      setStorageData({ templates: updatedTemplates });
+
+      // Mostrar notificación de éxito
+      if (chrome.notifications) {
+        chrome.notifications.create({
+          type: 'basic',
+          iconUrl: 'icon128.png',
+          title: 'Importación Exitosa',
+          message: `Se importaron ${newTemplates.length} plantillas correctamente`,
+          requireInteraction: true
+        });
+      }
+
       setImportData('');
       setImportExportOpen(false);
-      alert(`Se importaron ${valid.length} plantillas correctamente`);
+
     } catch (error) {
       console.error('Error al importar plantillas:', error);
-      alert(`Error al importar plantillas: ${error.message}`);
+      
+      // Mostrar notificación de error
+      if (chrome.notifications) {
+        chrome.notifications.create({
+          type: 'basic',
+          iconUrl: 'icon128.png',
+          title: 'Error de Importación',
+          message: error.message,
+          requireInteraction: true
+        });
+      }
     }
   };
 
-  /* ------------------------------------------------------------------
-     RENDER
-  ------------------------------------------------------------------*/
+  const sendScheduledMessage = async ({ numbers: nums, content }) => {
+    try {
+      const [tab] = await chrome.tabs.query({ url: 'https://web.whatsapp.com/*' });
+      if (!tab) throw new Error('No se encontró una pestaña de WhatsApp Web abierta');
+
+      await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        func: (n, m) => window.postMessage({ type: 'APYSKY_SEND', numeros: n, mensaje: m }, '*'),
+        args: [nums, content],
+      });
+    } catch (error) {
+      console.error('Error al enviar mensaje programado:', error);
+    }
+  };
+
+  const checkScheduledMessages = async () => {
+    if (!isExtensionEnvironment()) return;
+
+    const now = new Date();
+    const { scheduledMessages: messages = [] } = await getStorageData('scheduledMessages');
+
+    const messagesToSend = messages.filter((msg) => new Date(msg.scheduledTime) <= now);
+    const remainingMessages = messages.filter((msg) => new Date(msg.scheduledTime) > now);
+
+    if (messagesToSend.length) {
+      await Promise.all(messagesToSend.map(sendScheduledMessage));
+      await setStorageData({ scheduledMessages: remainingMessages });
+      setScheduledMessages(remainingMessages);
+
+      if (chrome.notifications) {
+        chrome.notifications.create({
+          type: 'basic',
+          iconUrl: 'icon128.png',
+          title: 'Mensajes Enviados',
+          message: `Se han enviado ${messagesToSend.length} mensajes programados`,
+        });
+      }
+    }
+  };
+
+  useEffect(() => {
+    checkConnection();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    loadData();
+
+    if (isExtensionEnvironment()) {
+      const interval = setInterval(checkScheduledMessages, 60000);
+      return () => clearInterval(interval);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   return (
     <div style={{ padding: '15px', width: '400px', fontFamily: 'Arial', maxHeight: '80vh', display: 'flex', flexDirection: 'column' }}>
       {/* Estilos Quill */}
@@ -662,43 +1067,47 @@ function Popup() {
 
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
-        <h2 style={{ color: '#b30000', margin: 0 }}>Apysky</h2>
-        <div style={{ display: 'flex', gap: '10px' }}>
+        <h2 style={{ margin: 0, color: '#b30000' }}>APY Sky</h2>
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
           <button
-            onClick={() => setShowScheduled((v) => !v)}
+            onClick={handleToggleScheduled}
             style={{
-              background: showScheduled ? '#b30000' : 'transparent',
-              border: '1px solid #b30000',
-              color: showScheduled ? 'white' : '#b30000',
-              padding: '5px 10px',
+              padding: '8px 16px',
+              backgroundColor: showScheduled ? '#b30000' : '#f0f0f0',
+              color: showScheduled ? 'white' : '#333',
+              border: '1px solid #d9d9d9',
               borderRadius: '4px',
               cursor: 'pointer',
-              fontSize: '12px',
               display: 'flex',
               alignItems: 'center',
               gap: '5px',
             }}
           >
-            <span>⏰</span>
-            {showScheduled ? 'Ocultar' : 'Ver'} Programados
+            <span>Programados</span>
+            {scheduledMessages.length > 0 && (
+              <span style={{
+                backgroundColor: '#b30000',
+                color: 'white',
+                padding: '2px 6px',
+                borderRadius: '10px',
+                fontSize: '12px',
+                minWidth: '20px',
+                textAlign: 'center',
+              }}>{scheduledMessages.length}</span>
+            )}
           </button>
           <button
-            onClick={() => setShowTemplates((v) => !v)}
+            onClick={handleToggleTemplates}
             style={{
-              background: showTemplates ? '#b30000' : 'transparent',
-              border: '1px solid #b30000',
-              color: showTemplates ? 'white' : '#b30000',
-              padding: '5px 10px',
+              padding: '8px 16px',
+              backgroundColor: showTemplates ? '#b30000' : '#f0f0f0',
+              color: showTemplates ? 'white' : '#333',
+              border: '1px solid #d9d9d9',
               borderRadius: '4px',
               cursor: 'pointer',
-              fontSize: '12px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '5px',
             }}
           >
-            <span>📋</span>
-            {showTemplates ? 'Ocultar' : 'Ver'} Plantillas
+            Plantillas
           </button>
         </div>
       </div>
@@ -1445,17 +1854,19 @@ function Popup() {
       )}
 
       {/* MODAL NUEVA/EDITAR PLANTILLA */}
-      <TemplateModal
-        isOpen={showTemplateModal}
-        onClose={() => {
-          setShowTemplateModal(false);
-          setEditingTemplate(null);
-        }}
-        onSave={saveTemplate}
-        template={editingTemplate}
-      />
+      {showTemplateModal && (
+        <TemplateModal
+          isOpen={showTemplateModal}
+          onClose={() => {
+            setShowTemplateModal(false);
+            setSelectedTemplate(null);
+          }}
+          onSave={handleSaveTemplate}
+          template={selectedTemplate}
+        />
+      )}
     </div>
   );
-}
+};
 
 export default Popup;

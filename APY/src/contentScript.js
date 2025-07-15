@@ -1,131 +1,139 @@
 // contentScript.js
+// -------------------------------------------
+// APYSKY WhatsApp Sender – Content Script
+// Implementación simplificada para auto-envío de mensajes
+// -------------------------------------------
 console.log('APYSKY: Content script cargado');
 
-// Función para esperar que un elemento esté disponible
-function waitForElement(selector, timeout = 5000) {
-    return new Promise((resolve, reject) => {
-        if (document.querySelector(selector)) {
-            return resolve(document.querySelector(selector));
-        }
-
-        const observer = new MutationObserver(() => {
-            if (document.querySelector(selector)) {
-                observer.disconnect();
-                resolve(document.querySelector(selector));
-            }
-        });
-
-        observer.observe(document.body, {
-            childList: true,
-            subtree: true
-        });
-
-        setTimeout(() => {
-            observer.disconnect();
-            reject(new Error(`Tiempo de espera agotado para el selector: ${selector}`));
-        }, timeout);
-    });
+// Función para esperar a que WAPI esté disponible
+function waitForWAPI(ms = 15000) {
+  return new Promise((resolve, reject) => {
+    if (window.WAPI) return resolve();
+    
+    const interval = setInterval(() => {
+      if (window.WAPI) { 
+        clearInterval(interval); 
+        resolve(); 
+      }
+    }, 200);
+    
+    setTimeout(() => { 
+      clearInterval(interval); 
+      reject(new Error('WAPI: Tiempo de espera agotado')); 
+    }, ms);
+  });
 }
 
-// Función para simular la escritura
-async function simulateTyping(element, text) {
-    if (!element) {
-        console.error('APYSKY: No se puede escribir en un elemento nulo');
-        return false;
-    }
+// Verificar el estado de conexión de WhatsApp Web
+function checkConnection() {
+  try {
+    // Verificar si el usuario está autenticado
+    const isAuthenticated = window.Store && 
+                          window.Store.State && 
+                          window.Store.State.Socket && 
+                          window.Store.State.Socket.stream === 'SYNCING';
+    
+    // Verificar si la interfaz de usuario está cargada
+    const isUILoaded = document.querySelector('div[data-testid="chat-list"]') !== null;
+    
+    return {
+      isConnected: isAuthenticated && isUILoaded,
+      isAuthenticated,
+      isUILoaded,
+      lastChecked: new Date().toISOString()
+    };
+  } catch (error) {
+    console.error('APYSKY: Error al verificar la conexión:', error);
+    return {
+      isConnected: false,
+      isAuthenticated: false,
+      isUILoaded: false,
+      error: error.message,
+      lastChecked: new Date().toISOString()
+    };
+  }
+}
 
+// Escuchar mensajes del background script
+chrome.runtime.onMessage.addListener(async (request, sender, sendResponse) => {
+  // Manejar solicitud de verificación de conexión
+  if (request.action === 'CHECK_CONNECTION') {
     try {
-        // Enfocar y hacer clic en el campo
-        element.focus();
-        element.click();
-        
-        // Limpiar el contenido existente
-        element.textContent = '';
-        
-        // Disparar evento de entrada
-        const inputEvent = new Event('input', { bubbles: true });
-        element.dispatchEvent(inputEvent);
-        
-        // Establecer el texto directamente (más confiable)
-        element.textContent = text;
-        
-        // Disparar evento de entrada nuevamente
-        element.dispatchEvent(inputEvent);
-        
-        return true;
+      await waitForWAPI();
+      const status = checkConnection();
+      console.log('APYSKY: Estado de conexión:', status);
+      
+      if (sendResponse) {
+        sendResponse({
+          success: true,
+          ...status
+        });
+      }
     } catch (error) {
-        console.error('APYSKY: Error al simular escritura:', error);
-        return false;
+      console.error('APYSKY: Error al verificar la conexión:', error);
+      
+      if (sendResponse) {
+        sendResponse({
+          success: false,
+          isConnected: false,
+          error: error.message || 'Error al verificar la conexión',
+          lastChecked: new Date().toISOString()
+        });
+      }
     }
-}
-
-// Función para enviar mensaje
-async function sendMessageToCurrentChat(phone, message) {
+    return true;
+  }
+  
+  // Manejar solicitud de envío de mensaje
+  if (request.action === 'wapiSend') {
+    console.log('APYSKY: Recibida solicitud para enviar mensaje vía WAPI');
+    
     try {
-        console.log('APYSKY: Intentando enviar mensaje a:', phone);
-        
-        // 1. Abrir la conversación con el número
-        const chatUrl = `https://web.whatsapp.com/send?phone=${phone.replace(/\D/g, '')}`;
-        window.open(chatUrl, '_blank');
-        
-        // 2. Esperar a que se cargue el campo de entrada
-        const chatInput = await waitForElement('div[contenteditable="true"][data-tab="10"]')
-            .catch(err => {
-                console.error('APYSKY: Error esperando el campo de entrada:', err);
-                return null;
-            });
-        
-        if (!chatInput) {
-            console.error('APYSKY: No se pudo encontrar el campo de entrada');
-            return false;
-        }
-
-        // 3. Escribir el mensaje
-        const typingSuccess = await simulateTyping(chatInput, message);
-        if (!typingSuccess) {
-            console.error('APYSKY: No se pudo escribir el mensaje');
-            return false;
-        }
-
-        // 4. Enviar el mensaje (usando Enter)
-        const enterEvent = new KeyboardEvent('keydown', {
-            key: 'Enter',
-            code: 'Enter',
-            keyCode: 13,
-            which: 13,
-            bubbles: true,
-            cancelable: true
+      // Verificar la conexión primero
+      const connectionStatus = checkConnection();
+      if (!connectionStatus.isConnected) {
+        throw new Error('No hay conexión con WhatsApp Web. Por favor, verifica que hayas iniciado sesión.');
+      }
+      
+      // Esperar a que WAPI esté disponible
+      await waitForWAPI();
+      
+      // Enviar el mensaje usando WAPI
+      await window.WAPI.sendMessage(request.jid, request.text);
+      console.log('APYSKY: Mensaje enviado con éxito a', request.jid);
+      
+      // Responder con éxito
+      if (sendResponse) {
+        sendResponse({ 
+          success: true,
+          timestamp: new Date().toISOString()
         });
-        
-        chatInput.dispatchEvent(enterEvent);
-        console.log('APYSKY: Mensaje enviado con éxito');
-        return true;
-        
+      }
     } catch (error) {
-        console.error('APYSKY: Error al enviar mensaje:', error);
-        return false;
-    }
-}
-
-// Escuchar mensajes del background
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    if (request.action === 'sendMessage' && request.phone && request.message) {
-        console.log('APYSKY: Recibido mensaje para enviar a:', request.phone);
-        
-        // Usar una promesa para manejar la respuesta asíncrona
-        const promise = sendMessageToCurrentChat(request.phone, request.message);
-        
-        // Enviar la respuesta cuando la promesa se resuelva
-        promise.then(success => {
-            sendResponse({ success });
-        }).catch(error => {
-            console.error('APYSKY: Error en el envío:', error);
-            sendResponse({ success: false, error: error.message });
+      console.error('APYSKY: Error al enviar mensaje con WAPI:', error);
+      
+      // Responder con error
+      if (sendResponse) {
+        sendResponse({ 
+          success: false, 
+          error: error.message || 'Error desconocido al enviar el mensaje',
+          timestamp: new Date().toISOString()
         });
-        
-        // Devolver true para indicar que la respuesta será asíncrona
-        return true;
+      }
     }
+    return true;
+  }
+  
+  // Para cualquier otro tipo de mensaje, no hacemos nada
+  return false;
 });
 
-console.log('APYSKY: Content script completamente cargado');
+// Iniciar el script cuando el DOM esté listo
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => {});
+} else {
+  // Si el documento ya está cargado, ejecutar directamente
+  {}
+}
+
+console.log('APYSKY: Content script completamente inicializado');
