@@ -1,7 +1,6 @@
 // background.js - Service Worker de la extensión
 
 // Almacena la pestaña activa de WhatsApp Web
-let whatsAppTab = null;
 
 /**
  * Busca una pestaña de WhatsApp Web abierta
@@ -81,8 +80,6 @@ function handleSendMessage(request, sender, sendResponse) {
           active: false 
         },
         (newTab) => {
-          whatsAppTab = newTab;
-          
           // Esperar a que la pestaña esté completamente cargada
           const onTabUpdated = (tabId, info, updatedTab) => {
             if (tabId === newTab.id && info.status === 'complete') {
@@ -100,8 +97,8 @@ function handleSendMessage(request, sender, sendResponse) {
       );
     }
   });
-  const waURL = `https://web.whatsapp.com/send?phone=${phoneNumber}` +
-                `&text=${encodeURIComponent(message || '')}` +
+  const waURL = `https://web.whatsapp.com/send?phone=${phone}` +
+                `&text=${encodeURIComponent(text || '')}` +
                 '&type=phone_number&app_absent=0';
   
   // Responder de inmediato para evitar el error de puerto cerrado

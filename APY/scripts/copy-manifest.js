@@ -1,9 +1,12 @@
-const fs = require('fs');
-const path = require('path');
+import fs from 'fs';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // Ruta al manifest original y destino
-const srcPath = path.join(__dirname, '../public/manifest.json');
-const destPath = path.join(__dirname, '../dist/manifest.json');
+const srcPath = join(__dirname, '../public/manifest.json');
+const destPath = join(__dirname, '../dist/manifest.json');
 
 try {
   // Leer el archivo manifest.json original
@@ -25,5 +28,5 @@ try {
   console.log('✅ manifest.json copiado y actualizado correctamente');
 } catch (error) {
   console.error('❌ Error al copiar el manifest.json:', error);
-  process.exit(1);
+  throw error;
 }
