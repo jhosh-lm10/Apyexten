@@ -41,6 +41,10 @@ export default defineConfig({
         {
           src: 'public/assets/*',
           dest: './assets/'
+        },
+        {
+          src: 'src/wapi-loader.js',
+          dest: './'
         }
       ]
     })
@@ -53,20 +57,10 @@ export default defineConfig({
         popup: resolve(__dirname, 'index.html'),
         background: resolve(__dirname, 'src/background.js'),
         'contentScript': resolve(__dirname, 'src/contentScript.js'),
+        'wapi-loader': resolve(__dirname, 'src/wapi-loader.js')
       },
       output: {
-        entryFileNames: (chunkInfo) => {
-          // Mantener el nombre original del archivo para contentScript.js
-          if (chunkInfo.name === 'contentScript') {
-            return 'contentScript.js';
-          }
-          // Mantener el nombre original para background.js
-          if (chunkInfo.name === 'background') {
-            return 'background.js';
-          }
-          // Para el resto, usar el formato por defecto
-          return 'assets/[name]-[hash].js';
-        },
+        entryFileNames: '[name].js',
         chunkFileNames: 'assets/[name]-[hash].js',
         assetFileNames: 'assets/[name]-[hash][extname]',
       },
