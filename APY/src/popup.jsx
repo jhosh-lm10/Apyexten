@@ -77,10 +77,14 @@ const validatePhone = (phone) => {
       return { valid: false, error: 'Número de teléfono inválido' };
     }
     return { valid: true, phone: phoneNumber.formatInternational() };
-} catch {
+  } catch (error) {
+    console.error('Error parsing phone number:', error);
     const cleaned = phone.replace(/[^\d+]/g, '');
     if (cleaned.length < 6 || cleaned.length > 20) {
-      return { valid: false, error: 'Número de teléfono inválido (debe tener entre 6 y 20 dígitos)' };
+      return {
+        valid: false,
+        error: 'Número de teléfono inválido (debe tener entre 6 y 20 dígitos)'
+      };
     }
     return { valid: true, phone: cleaned };
   }
@@ -297,13 +301,7 @@ const Popup = () => {
       const response = await new Promise((resolve) => {
         chrome.runtime.sendMessage(
           { action: 'CHECK_WHATSAPP_CONNECTION' },
-          (response) => {
-            if (chrome.runtime.lastError) {
-              resolve({ isConnected: false, error: chrome.runtime.lastError.message });
-            } else {
-              resolve(response || { isConnected: false, error: 'No response from background' });
-            }
-          }
+          (resp) => resolve(resp || { isConnected: false, error: 'No response from background' })
         );
       });
 
