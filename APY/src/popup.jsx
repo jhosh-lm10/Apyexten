@@ -77,8 +77,8 @@ const validatePhone = (phone) => {
       return { valid: false, error: 'Número de teléfono inválido' };
     }
     return { valid: true, phone: phoneNumber.formatInternational() };
-  } catch (error) {
-    const cleaned = phone.replace(/[^\d\+]/g, '');
+} catch {
+    const cleaned = phone.replace(/[^\d+]/g, '');
     if (cleaned.length < 6 || cleaned.length > 20) {
       return { valid: false, error: 'Número de teléfono inválido (debe tener entre 6 y 20 dígitos)' };
     }
@@ -102,151 +102,6 @@ const hasValidNumbers = (text) => {
 };
 
 /* ------------------------------------------------------------------
-  MODAL PLANTILLAS
--------------------------------------------------------------------*/
-const TemplateModal = ({ isOpen, onClose, onSave, template = null }) => {
-  const [name, setName] = useState(template?.name || '');
-  const [content, setContent] = useState(template?.content || '');
-
-  useEffect(() => {
-    if (template) {
-      setName(template.name);
-      setContent(template.content);
-    } else {
-      setName('');
-      setContent('');
-    }
-  }, [template]);
-
-  if (!isOpen) return null;
-
-  return (
-    <div
-      style={{
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        backgroundColor: 'rgba(0,0,0,0.5)',
-        display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'center',
-        zIndex: 1000,
-      }}
-    >
-      <div
-        style={{
-          backgroundColor: 'white',
-          padding: '20px',
-          borderRadius: '8px',
-          width: '90%',
-          maxWidth: '600px',
-          maxHeight: '90vh',
-          display: 'flex',
-          flexDirection: 'column',
-        }}
-      >
-        <h3 style={{ marginTop: 0, color: '#b30000' }}>
-          {template ? 'Editar Plantilla' : 'Nueva Plantilla'}
-        </h3>
-
-        {/* Nombre */}
-        <div style={{ marginBottom: '15px' }}>
-          <label
-            style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}
-          >
-            Nombre de la plantilla:
-          </label>
-          <input
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            style={{
-              width: '100%',
-              padding: '8px',
-              border: '1px solid #ddd',
-              borderRadius: '4px',
-              boxSizing: 'border-box',
-            }}
-            placeholder="Ej: Recordatorio de pago"
-          />
-        </div>
-
-        {/* Contenido */}
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', marginBottom: '15px' }}>
-          <label style={{ marginBottom: '5px', fontWeight: 'bold' }}>Contenido:</label>
-          <ReactQuill
-            theme="snow"
-            value={content}
-            onChange={setContent}
-            style={{ flex: 1, display: 'flex', flexDirection: 'column' }}
-            modules={{
-              toolbar: [
-                [{ header: [1, 2, 3, false] }],
-                ['bold', 'italic', 'underline', 'strike'],
-                [{ list: 'ordered' }, { list: 'bullet' }],
-                ['link', 'image'],
-                ['clean'],
-              ],
-            }}
-            formats={[
-              'header',
-              'bold',
-              'italic',
-              'underline',
-              'strike',
-              'list',
-              'bullet',
-              'link',
-              'image',
-            ]}
-          />
-        </div>
-
-        {/* Acciones */}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-          <button
-            onClick={onClose}
-            style={{
-              padding: '8px 16px',
-              borderRadius: '4px',
-              cursor: 'pointer',
-              transition: 'all 0.2s',
-              border: 'none',
-              outline: 'none',
-              fontSize: '14px',
-              backgroundColor: '#f0f0f0',
-              color: '#333',
-              border: '1px solid #ccc',
-              '&:hover': {
-                backgroundColor: '#e0e0e0',
-              },
-            }}
-          >
-            Cancelar
-          </button>
-          <button
-            onClick={() => onSave({ id: template?.id, name, content })}
-            disabled={!name.trim() || !content.trim()}
-            style={{
-              padding: '8px 16px',
-              backgroundColor:
-                !name.trim() || !content.trim() ? '#ccc' : '#b30000',
-              color: 'white',
-              border: 'none',
-              borderRadius: '4px',
-              cursor:
-                !name.trim() || !content.trim() ? 'not-allowed' : 'pointer',
-            }}
-          >
-            {template ? 'Actualizar' : 'Guardar'} Plantilla
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
 
 /* ------------------------------------------------------------------
   ESTILOS QUILL (inline para no depender de archivo externo)
@@ -1642,3 +1497,4 @@ const Popup = () => {
     </div>
   );
 }
+export default Popup;

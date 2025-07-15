@@ -128,12 +128,5 @@ chrome.runtime.onMessage.addListener(async (request, sender, sendResponse) => {
   return false;
 });
 
-// Iniciar el script cuando el DOM esté listo
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', () => {});
-} else {
-  // Si el documento ya está cargado, ejecutar directamente
-  {}
-}
 
 console.log('APYSKY: Content script completamente inicializado');

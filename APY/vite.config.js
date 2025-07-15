@@ -1,7 +1,5 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
-import { fileURLToPath } from 'url';
-import babel from '@vitejs/plugin-react';
 
 // Configure React plugin with Babel for JSX
 const reactConfig = {
@@ -34,7 +32,7 @@ export default defineConfig({
           console.log('✅ Manifest copiado correctamente');
         } catch (error) {
           console.error('❌ Error copiando el manifest:', error);
-          process.exit(1);
+          throw error;
         }
       }
     },

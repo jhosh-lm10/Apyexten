@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import ReactQuill from 'react-quill';
 import 'react-quill/dist/quill.snow.css';
 
@@ -109,7 +109,6 @@ const TemplateModal = ({ isOpen, onClose, onSave, template }) => {
                 borderRadius: '4px',
                 cursor: 'pointer',
                 transition: 'all 0.2s',
-                border: 'none',
                 outline: 'none',
                 fontSize: '14px',
                 backgroundColor: '#f0f0f0',
