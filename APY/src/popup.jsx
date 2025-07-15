@@ -5,6 +5,36 @@ import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import './popup.css';
 import { parsePhoneNumber } from 'libphonenumber-js';
+import TemplateModal from './components/TemplateModal';
+
+/* ------------------------------------------------------------------
+  HELPERS STORAGE
+-------------------------------------------------------------------*/
+const getStorageData = (keys) =>
+  new Promise((resolve, reject) => {
+    if (!chrome.storage || !chrome.storage.local) {
+      return reject(new Error('chrome.storage.local no está disponible'));
+    }
+    chrome.storage.local.get(keys, (result) => {
+      if (chrome.runtime.lastError) {
+        return reject(chrome.runtime.lastError);
+      }
+      resolve(result);
+    });
+  });
+
+const setStorageData = (data) =>
+  new Promise((resolve, reject) => {
+    if (!chrome.storage || !chrome.storage.local) {
+      return reject(new Error('chrome.storage.local no está disponible'));
+    }
+    chrome.storage.local.set(data, () => {
+      if (chrome.runtime.lastError) {
+        return reject(chrome.runtime.lastError);
+      }
+      resolve();
+    });
+  });
 
 /* ------------------------------------------------------------------
   UTILIDADES
@@ -40,46 +70,27 @@ const getTimeRemaining = (scheduledTime) => {
 /* ------------------------------------------------------------------
   VALIDACIÓN DE NÚMEROS DE TELÉFONO
 -------------------------------------------------------------------*/
-const parseNumbers = (text) => {
-  // Eliminar caracteres no numéricos excepto "+"
-  const cleaned = text.replace(/[^\d\+]/g, '');
-  // Separar por saltos de línea, comas o espacios
-  return cleaned.split(/[\n,\s]+/).filter(Boolean).map(num => {
-    try {
-      const phoneNumber = parsePhoneNumber(num);
-      if (!phoneNumber.isValid()) throw new Error('Número no válido');
-      return phoneNumber.formatInternational();
-    } catch {
-      return num;
-    }
-  });
-};
-
 const validatePhone = (phone) => {
   try {
-    // Intentar parsear el número usando libphonenumber-js
     const phoneNumber = parsePhoneNumber(phone);
     if (!phoneNumber.isValid()) {
       return { valid: false, error: 'Número de teléfono inválido' };
     }
-    
-    // Formatear el número en formato internacional
-    const formatted = phoneNumber.formatInternational();
-    return { valid: true, phone: formatted };
+    return { valid: true, phone: phoneNumber.formatInternational() };
   } catch (error) {
-    // Si no se puede parsear, intentar una validación básica
     const cleaned = phone.replace(/[^\d\+]/g, '');
     if (cleaned.length < 6 || cleaned.length > 20) {
       return { valid: false, error: 'Número de teléfono inválido (debe tener entre 6 y 20 dígitos)' };
     }
-    
-    // Validar formato básico
-    if (!/^(\+\d{1,3})?\d{6,20}$/.test(cleaned)) {
-      return { valid: false, error: 'Formato de número inválido' };
-    }
-    
     return { valid: true, phone: cleaned };
   }
+};
+
+const parseNumbers = (text) => {
+  return text.split(/[\n,\s]+/).map((num) => {
+    const result = validatePhone(num);
+    return result.valid ? result.phone : num;
+  });
 };
 
 const hasValidNumbers = (text) => {
@@ -266,10 +277,22 @@ const customStyles = `
   }
 `;
 
+const showNotification = (title, message, icon) => {
+  if (chrome.notifications) {
+    chrome.notifications.create({
+      type: 'basic',
+      iconUrl: icon || 'icon128.png',
+      title: title,
+      message: message,
+      requireInteraction: true,
+    });
+  }
+};
+
 /* ------------------------------------------------------------------
   COMPONENTE PRINCIPAL
 ------------------------------------------------------------------*/
-function Popup() {
+const Popup = () => {
   /* --------------------
      ESTADOS CONEXIÓN WA
   ---------------------*/
@@ -303,21 +326,21 @@ function Popup() {
     };
     
     loadFormState();
-  }, []);
+  }, []); // Sólo se ejecuta una vez al montar el componente
   
   // Guardar estado cuando cambia (con debounce)
   useEffect(() => {
-    const saveFormState = () => {
-      setStorageData({
-        formState: { numbers, message }
-      }).catch(error => {
+    const saveFormState = async () => {
+      try {
+        await setStorageData({ formState: { numbers, message } });
+      } catch (error) {
         console.error('Error al guardar el estado del formulario:', error);
-      });
+      }
     };
-    
-    const timer = setTimeout(saveFormState, 500); // Debounce de 500ms
-    return () => clearTimeout(timer);
-  }, [numbers, message]);
+
+    const timer = setTimeout(saveFormState, 500); // debounce
+    return () => clearTimeout(timer); // Limpiar el timer si cambia `numbers` o `message`
+  }, [numbers, message]); // Sólo se ejecuta cuando los valores cambian
 
   /* --------------------
      PLANTILLAS
@@ -345,6 +368,16 @@ function Popup() {
   });
   const [delayBetweenMessages, setDelayBetweenMessages] = useState(5); // segundos por defecto
   const [showScheduled, setShowScheduled] = useState(false);
+
+  const handleToggleScheduled = () => {
+    setShowScheduled((prev) => !prev);
+    setShowTemplates(false); // Cierra la otra vista
+  };
+
+  const handleToggleTemplates = () => {
+    setShowTemplates((prev) => !prev);
+    setShowScheduled(false); // Cierra la otra vista
+  };
 
   /* --------------------
      CONFIG EDITOR
@@ -437,15 +470,7 @@ function Popup() {
       const errorMessage = error.message || 'Error al conectar con WhatsApp Web';
       
       // Mostrar notificación al usuario
-      if (chrome.notifications) {
-        chrome.notifications.create({
-          type: 'basic',
-          iconUrl: 'icon128.png',
-          title: 'Error de Conexión',
-          message: errorMessage,
-          requireInteraction: true
-        });
-      }
+      showNotification('Error de Conexión', errorMessage);
 
       setConnectionStatus({
         isConnected: false,
@@ -496,15 +521,7 @@ function Popup() {
             console.error('APYSKY: Error de runtime:', errorMessage);
             
             // Mostrar notificación más visible
-            if (chrome.notifications) {
-              chrome.notifications.create({
-                type: 'basic',
-                iconUrl: 'icon128.png',
-                title: 'Error de Envío',
-                message: `Error al enviar mensaje a ${phoneNumber}: ${errorMessage}`,
-                requireInteraction: true
-              });
-            }
+            showNotification('Error de Envío', `Error al enviar mensaje a ${phoneNumber}: ${errorMessage}`);
             
             setSendStatus({ success: false, message: errorMessage });
             resolve({ success: false, error: errorMessage });
@@ -517,15 +534,7 @@ function Popup() {
             console.error('APYSKY:', errorMessage);
             
             // Mostrar notificación más visible
-            if (chrome.notifications) {
-              chrome.notifications.create({
-                type: 'basic',
-                iconUrl: 'icon128.png',
-                title: 'Error de Envío',
-                message: `Error al enviar mensaje a ${phoneNumber}: ${errorMessage}`,
-                requireInteraction: true
-              });
-            }
+            showNotification('Error de Envío', `Error al enviar mensaje a ${phoneNumber}: ${errorMessage}`);
             
             setSendStatus({ success: false, message: errorMessage });
             resolve({ success: false, error: errorMessage });
@@ -538,15 +547,7 @@ function Popup() {
             console.log('APYSKY:', statusMessage);
             
             // Mostrar notificación de éxito
-            if (chrome.notifications) {
-              chrome.notifications.create({
-                type: 'basic',
-                iconUrl: 'icon128.png',
-                title: 'Mensaje Enviado',
-                message: statusMessage,
-                requireInteraction: true
-              });
-            }
+            showNotification('Mensaje Enviado', statusMessage);
             
             setSendStatus({ success: true, message: statusMessage });
             
@@ -571,15 +572,7 @@ function Popup() {
             console.error('APYSKY: Error al enviar mensaje:', errorMessage);
             
             // Mostrar notificación más visible
-            if (chrome.notifications) {
-              chrome.notifications.create({
-                type: 'basic',
-                iconUrl: 'icon128.png',
-                title: 'Error de Envío',
-                message: `Error al enviar mensaje a ${phoneNumber}: ${errorMessage}`,
-                requireInteraction: true
-              });
-            }
+            showNotification('Error de Envío', `Error al enviar mensaje a ${phoneNumber}: ${errorMessage}`);
             
             setSendStatus({ 
               success: false, 
@@ -596,15 +589,7 @@ function Popup() {
     const errorMessage = `Error al enviar a ${phoneNumber}: ${error.message || 'Error desconocido'}`;
     
     // Mostrar notificación más visible
-    if (chrome.notifications) {
-      chrome.notifications.create({
-        type: 'basic',
-        iconUrl: 'icon128.png',
-        title: 'Error de Envío',
-        message: errorMessage,
-        requireInteraction: true
-      });
-    }
+    showNotification('Error de Envío', errorMessage);
     
     setSendStatus({ success: false, message: errorMessage });
     return { success: false, error: errorMessage };
@@ -613,194 +598,49 @@ function Popup() {
       setIsSending(false);
     }
   }
-    }
   };
 
   // Función para enviar mensajes a múltiples números con intervalo
   const sendBulkMessages = async (phoneNumbers, messageHtml) => {
-    if (!phoneNumbers || !phoneNumbers.length) {
-      setSendStatus({ success: false, message: 'No hay números de teléfono para enviar' });
-      return { success: false, error: 'No hay números de teléfono' };
-    }
-
-    // Verificar si estamos en el entorno de la extensión
-    if (!isExtensionEnvironment()) {
-      const errorMsg = 'No se puede enviar mensajes fuera de la extensión';
-      setSendStatus({ success: false, message: errorMsg });
-      return { success: false, error: errorMsg };
-    }
-    
-    // Convertir el mensaje HTML a texto plano
-    const messageText = typeof messageHtml === 'string' ? 
-      messageHtml.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() : 
-      String(messageHtml || '').trim();
-      
-    if (!messageText) {
-      const errorMsg = 'El mensaje no puede estar vacío';
-      setSendStatus({ success: false, message: errorMsg });
-      return { success: false, error: errorMsg };
-    }
+    const messageText = messageHtml.replace(/<[^>]+>/g, ' ').trim();
+    if (!messageText) return { success: false, error: 'El mensaje no puede estar vacío' };
 
     try {
-      // Verificar la conexión con WhatsApp Web
-      const connection = await checkWhatsAppConnection();
-      if (!connection.isConnected) {
-        const errorMsg = 'No se pudo conectar con WhatsApp Web. Por favor, abre WhatsApp Web en tu navegador.';
-        setSendStatus({ success: false, message: errorMsg });
-        return { success: false, error: errorMsg };
-      }
-      
-      // Iniciar envío
+      let sent = 0;
+      let failed = 0;
       setIsSending(true);
-      const delayBetweenMessages = 3500; // 3.5 segundos
-      let successfulSends = 0;
-      let failedSends = 0;
-      
-      // Procesar cada número
+
       for (let i = 0; i < phoneNumbers.length; i++) {
         const phone = phoneNumbers[i].trim();
-        if (!phone) continue;
-        
-        // Validar número antes de enviar
         const validation = validatePhone(phone);
         if (!validation.valid) {
-          failedSends++;
-          console.error(`Número inválido: ${phone} - ${validation.error}`);
+          failed++;
           continue;
         }
 
         const phoneNumber = validation.phone;
-        
-        // Actualizar estado
-        setSendStatus({ 
-          success: true, 
-          message: `Enviando a ${i + 1}/${phoneNumbers.length}: ${phoneNumber}` 
-        });
-        
-        try {
-          // Enviar mensaje a través del background script
-          await new Promise((resolve, reject) => {
-            chrome.runtime.sendMessage(
-              { 
-                action: 'SEND_MESSAGE',
-                phone: phoneNumber,
-                message: messageText
-              },
-              (response) => {
-                if (chrome.runtime.lastError) {
-                  reject(new Error(chrome.runtime.lastError.message));
-                } else if (response && !response.success) {
-                  reject(new Error(response.error || 'Error desconocido al enviar el mensaje'));
-                } else {
-                  resolve();
-                }
-              }
-            );
-          });
-          
-          successfulSends++;
-          console.log(`Mensaje enviado a ${phoneNumber} (${i + 1}/${phoneNumbers.length})`);
-          
-        } catch (error) {
-          failedSends++;
-          console.error(`Error al enviar a ${phoneNumber}:`, error);
-          
-          // Mostrar notificación de error
-          const notification = new Notification('Error de envío', {
-            body: `Error al enviar a ${phoneNumber}: ${error.message}\n` +
-                  `Enviados: ${successfulSends}, Fallidos: ${failedSends}`,
-            icon: 'icons/icon128.png'
-          });
-          
-          // Continuar automáticamente después de 3 segundos
-          await new Promise(resolve => setTimeout(resolve, 3000));
-        }
-        
-        // Esperar antes del siguiente envío (excepto después del último)
-        if (i < phoneNumbers.length - 1) {
-          await new Promise(resolve => setTimeout(resolve, delayBetweenMessages));
-        }
+        setSendStatus({ success: true, message: `Enviando a ${i + 1}/${phoneNumbers.length}: ${phoneNumber}` });
+
+        const result = await sendWhatsAppMessage(phoneNumber, messageText, false);
+        result.success ? sent++ : failed++;
+
+        await new Promise((resolve) => setTimeout(resolve, 3500)); // Espera entre mensajes
       }
-      
-      // Mostrar resumen
-      const statusMsg = `Envío completado. ` +
-        `Enviados: ${successfulSends}, Fallidos: ${failedSends}`;
-      
-      setSendStatus({ 
-        success: failedSends === 0, 
-        message: statusMsg 
+
+      setSendStatus({
+        success: failed === 0,
+        message: `Envío completado. Enviados: ${sent}, Fallidos: ${failed}`,
       });
-      
-      setIsSending(false);
-      return { 
-        success: failedSends === 0, 
-        message: statusMsg,
-        stats: { sent: successfulSends, failed: failedSends }
-      };
-      
+
+      return { success: failed === 0, sent, failed };
     } catch (error) {
-      console.error('Error inesperado al enviar mensajes:', error);
-      
-      const errorMsg = `Error inesperado: ${error.message || 'Error desconocido'}`;
-      setSendStatus({ 
-        success: false, 
-        message: errorMsg 
-      });
-      
+      console.error('Error al enviar mensajes masivos:', error);
+      setSendStatus({ success: false, message: error.message });
+      return { success: false, error: error.message };
+    } finally {
       setIsSending(false);
-      return { 
-        success: false, 
-        error: errorMsg 
-      };
     }
   };
-
-  const checkWhatsAppConnection = useCallback(async () => {
-    if (!isExtensionEnvironment()) {
-      setConnectionStatus({
-        isConnected: false,
-        isLoading: false,
-        error: 'No se puede conectar con WhatsApp Web en este entorno',
-        lastChecked: new Date().toISOString(),
-        whatsAppTab: null
-      });
-      return { isConnected: false, error: 'No se puede conectar con WhatsApp Web en este entorno' };
-    }
-  
-    setConnectionStatus(prev => ({ ...prev, isLoading: true, error: null }));
-  
-    try {
-      const response = await new Promise((resolve) => {
-        chrome.runtime.sendMessage(
-          { action: 'CHECK_WHATSAPP_CONNECTION' },
-          (response) => resolve(response || { isConnected: false, error: 'No response from background' })
-        );
-      });
-  
-      if (!response.isConnected) {
-        throw new Error('No se pudo conectar con WhatsApp Web');
-      }
-  
-      setConnectionStatus({
-        isConnected: response.isConnected,
-        isLoading: false,
-        error: null,
-        lastChecked: new Date().toISOString(),
-        whatsAppTab: response.tabId ? { id: response.tabId } : null
-      });
-  
-      return response;
-    } catch (error) {
-      console.error('Error al verificar la conexión con WhatsApp Web:', error);
-      setConnectionStatus({
-        isConnected: false,
-        isLoading: false,
-        error: error.message,
-        whatsAppTab: null
-      });
-      return { isConnected: false, error: error.message };
-    }
-  }, []);
   
   /* ------------------------------------------------------------------
      CARGAR PLANTILLAS Y PROGRAMADOS
@@ -856,14 +696,10 @@ function Popup() {
       await setStorageData({ scheduledMessages: remainingMessages });
       setScheduledMessages(remainingMessages);
 
-      if (chrome.notifications) {
-        chrome.notifications.create({
-          type: 'basic',
-          iconUrl: 'icon128.png',
-          title: 'Mensajes Enviados',
-          message: `Se han enviado ${messagesToSend.length} mensajes programados`,
-        });
-      }
+      showNotification(
+        'Mensajes Enviados',
+        `Se han enviado ${messagesToSend.length} mensajes programados`
+      );
     }
   };
 
@@ -978,15 +814,10 @@ function Popup() {
       setStorageData({ templates: updatedTemplates });
 
       // Mostrar notificación de éxito
-      if (chrome.notifications) {
-        chrome.notifications.create({
-          type: 'basic',
-          iconUrl: 'icon128.png',
-          title: 'Importación Exitosa',
-          message: `Se importaron ${newTemplates.length} plantillas correctamente`,
-          requireInteraction: true
-        });
-      }
+      showNotification(
+        'Importación Exitosa',
+        `Se importaron ${newTemplates.length} plantillas correctamente`
+      );
 
       setImportData('');
       setImportExportOpen(false);
@@ -995,70 +826,13 @@ function Popup() {
       console.error('Error al importar plantillas:', error);
       
       // Mostrar notificación de error
-      if (chrome.notifications) {
-        chrome.notifications.create({
-          type: 'basic',
-          iconUrl: 'icon128.png',
-          title: 'Error de Importación',
-          message: error.message,
-          requireInteraction: true
-        });
-      }
-    }
-  };
-
-  const sendScheduledMessage = async ({ numbers: nums, content }) => {
-    try {
-      const [tab] = await chrome.tabs.query({ url: 'https://web.whatsapp.com/*' });
-      if (!tab) throw new Error('No se encontró una pestaña de WhatsApp Web abierta');
-
-      await chrome.scripting.executeScript({
-        target: { tabId: tab.id },
-        func: (n, m) => window.postMessage({ type: 'APYSKY_SEND', numeros: n, mensaje: m }, '*'),
-        args: [nums, content],
-      });
-    } catch (error) {
-      console.error('Error al enviar mensaje programado:', error);
-    }
-  };
-
-  const checkScheduledMessages = async () => {
-    if (!isExtensionEnvironment()) return;
-
-    const now = new Date();
-    const { scheduledMessages: messages = [] } = await getStorageData('scheduledMessages');
-
-    const messagesToSend = messages.filter((msg) => new Date(msg.scheduledTime) <= now);
-    const remainingMessages = messages.filter((msg) => new Date(msg.scheduledTime) > now);
-
-    if (messagesToSend.length) {
-      await Promise.all(messagesToSend.map(sendScheduledMessage));
-      await setStorageData({ scheduledMessages: remainingMessages });
-      setScheduledMessages(remainingMessages);
-
-      if (chrome.notifications) {
-        chrome.notifications.create({
-          type: 'basic',
-          iconUrl: 'icon128.png',
-          title: 'Mensajes Enviados',
-          message: `Se han enviado ${messagesToSend.length} mensajes programados`,
-        });
-      }
+      showNotification('Error de Importación', error.message);
     }
   };
 
   useEffect(() => {
-    checkConnection();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    loadData();
-
-    if (isExtensionEnvironment()) {
-      const interval = setInterval(checkScheduledMessages, 60000);
-      return () => clearInterval(interval);
-    }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    checkWhatsAppConnection();
+  }, [checkWhatsAppConnection]);
 
   return (
     <div style={{ padding: '15px', width: '400px', fontFamily: 'Arial', maxHeight: '80vh', display: 'flex', flexDirection: 'column' }}>
@@ -1859,14 +1633,12 @@ function Popup() {
           isOpen={showTemplateModal}
           onClose={() => {
             setShowTemplateModal(false);
-            setSelectedTemplate(null);
+            setEditingTemplate(null);
           }}
-          onSave={handleSaveTemplate}
-          template={selectedTemplate}
+          onSave={saveTemplate}
+          template={editingTemplate}
         />
       )}
     </div>
   );
-};
-
-export default Popup;
+}

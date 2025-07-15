@@ -1,12 +1,22 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import { fileURLToPath } from 'url';
+import babel from '@vitejs/plugin-react';
+
+// Configure React plugin with Babel for JSX
+const reactConfig = {
+  babel: {
+    presets: ['@babel/preset-react'],
+    plugins: ['@babel/plugin-transform-react-jsx']
+  }
+};
 import { resolve } from 'path';
 import { viteStaticCopy } from 'vite-plugin-static-copy';
 import fs from 'fs';
 
 export default defineConfig({
   plugins: [
-    react(),
+    react(reactConfig),
     {
       name: 'copy-manifest',
       closeBundle() {
