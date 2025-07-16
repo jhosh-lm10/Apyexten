@@ -18,6 +18,7 @@ export default defineConfig({
         try {
           const manifestPath = resolve(__dirname, 'public/manifest.json');
           const outputPath = resolve(__dirname, 'dist/manifest.json');
+          fs.mkdirSync(resolve(__dirname, 'dist'), { recursive: true });
           fs.copyFileSync(manifestPath, outputPath);
           console.log('✅ Manifest copiado correctamente');
         } catch (error) {

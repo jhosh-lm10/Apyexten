@@ -19,36 +19,6 @@ async function findWhatsAppTab() {
   }
 }
 
-/**
- * Verifica si WhatsApp Web está listo
- * @returns {Promise<{isConnected: boolean, error?: string}>}
- */
-async function checkWhatsAppConnection() {
-  try {
-    const tab = await findWhatsAppTab();
-    if (!tab) {
-      return { isConnected: false, error: 'No se encontró WhatsApp Web abierto' };
-    }
-
-    // Enviar mensaje al content script para verificar conexión
-    const response = await chrome.tabs.sendMessage(tab.id, { 
-      action: 'CHECK_CONNECTION' 
-    }).catch(error => ({
-      isConnected: false,
-      error: 'No se pudo conectar con el content script: ' + error.message
-    }));
-
-    return response || { 
-      isConnected: false, 
-      error: 'No se recibió respuesta del content script' 
-    };
-  } catch (error) {
-    return { 
-      isConnected: false, 
-      error: 'Error al verificar conexión: ' + error.message 
-    };
-  }
-}
 
 /**
  * Maneja el envío de mensajes usando WAPI
