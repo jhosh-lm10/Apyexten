@@ -2,34 +2,19 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { resolve } from 'path';
 import { viteStaticCopy } from 'vite-plugin-static-copy';
-import fs from 'fs';
 
+// Configuración básica de Vite para extensiones de Chrome
 export default defineConfig({
   plugins: [
-    react({
-      jsxImportSource: 'react',
-      babel: {
-        plugins: ['@babel/plugin-transform-react-jsx']
-      }
-    }),
-    {
-      name: 'copy-manifest',
-      closeBundle() {
-        try {
-          const manifestPath = resolve(__dirname, 'public/manifest.json');
-          const outputPath = resolve(__dirname, 'dist/manifest.json');
-          fs.mkdirSync(resolve(__dirname, 'dist'), { recursive: true });
-          fs.copyFileSync(manifestPath, outputPath);
-          console.log('✅ Manifest copiado correctamente');
-        } catch (error) {
-          console.error('❌ Error copiando el manifest:', error);
-        }
-      }
-    },
+    react(),
+    // Copiar archivos estáticos necesarios
     viteStaticCopy({
       targets: [
-        { src: 'public/assets/*', dest: './assets/' },
-        { src: 'src/wapi-loader.js', dest: './' }
+        { src: 'public/manifest.json', dest: '.' },
+        { src: 'public/assets/*', dest: 'assets' },
+        { src: 'src/wapi-loader.js', dest: '.' },
+        { src: 'src/contentScript.js', dest: '.' },
+        { src: 'popup.html', dest: '.' }
       ]
     })
   ],
@@ -38,21 +23,23 @@ export default defineConfig({
     emptyOutDir: true,
     rollupOptions: {
       input: {
-        popup: resolve(__dirname, 'index.html'),
-        background: resolve(__dirname, 'src/background.js'),
-        contentScript: resolve(__dirname, 'src/contentScript.js'),
-        'wapi-loader': resolve(__dirname, 'src/wapi-loader.js')
+        popup: resolve(__dirname, 'src/main.jsx'),
+        background: resolve(__dirname, 'src/background.js')
       },
       output: {
-        entryFileNames: '[name].js',
         chunkFileNames: 'chunks/[name].js',
-        assetFileNames: 'assets/[name].[ext]'
+        assetFileNames: 'assets/[name].[ext]',
+        // Asegurar que el entry point se llame popup.js
+        entryFileNames: (chunkInfo) => {
+          return chunkInfo.name === 'popup' ? 'popup.js' : '[name].js';
+        }
       }
     }
   },
   publicDir: 'public',
   base: './',
   server: {
-    port: 3000
+    port: 3000,
+    open: false
   }
 });
