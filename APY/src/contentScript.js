@@ -72,7 +72,20 @@ function setupMessageHandler() {
       return true; // Respuesta asíncrona
     }
     
-    // Otros manejadores de mensajes pueden ir aquí
+    if (request.action === 'SEND_MESSAGE') {
+      const { phoneNumber, message } = request.payload;
+      sendMessage(phoneNumber, message)
+        .then(result => sendResponse({ ...result, success: true }))
+        .catch(error =>
+          sendResponse({
+            success: false,
+            error: error.message || 'Error desconocido al enviar el mensaje',
+            timestamp: new Date().toISOString()
+          })
+        );
+      return true;
+    }
+
     return false;
   });
 }
@@ -144,29 +157,76 @@ function checkWhatsAppStatus() {
 /**
  * Carga dinámicamente WAPI
  */
-function loadWAPI() {
+async function loadWAPI() {
   if (state.isWAPILoaded) {
+    console.log('APYSKY: WAPI ya está cargado');
     return Promise.resolve();
   }
 
   return new Promise((resolve, reject) => {
-    console.log('APYSKY: Cargando WAPI...');
-    
-    // Crear script para cargar WAPI
+    // Verificar si WAPI ya está disponible
+    if (window.WAPI) {
+      console.log('APYSKY: WAPI ya está disponible globalmente');
+      state.isWAPILoaded = true;
+      return resolve();
+    }
+
+    console.log('APYSKY: Iniciando carga de WAPI...');
+
     const script = document.createElement('script');
     script.src = chrome.runtime.getURL('wapi-loader.js');
+
+    let checkInterval;
+    let timeout;
+
+    const cleanup = () => {
+      if (checkInterval) clearInterval(checkInterval);
+      if (timeout) clearTimeout(timeout);
+    };
+
     script.onload = () => {
-      console.log('APYSKY: WAPI cargado correctamente');
-      state.isWAPILoaded = true;
-      verifyWhatsAppReady();
-      resolve();
+      console.log('APYSKY: wapi-loader.js cargado correctamente');
+
+      timeout = setTimeout(() => {
+        cleanup();
+        if (!state.isWAPILoaded) {
+          const error = new Error('Tiempo de espera agotado al cargar WAPI');
+          console.error('APYSKY:', error.message);
+          reject(error);
+        }
+      }, CONFIG.WAPI_TIMEOUT);
+
+      checkInterval = setInterval(() => {
+        try {
+          if (window.WAPI && window.WAPI.isReady) {
+            cleanup();
+            state.isWAPILoaded = true;
+            console.log('APYSKY: WAPI cargado y listo para usar');
+
+            chrome.runtime.sendMessage({
+              action: 'WAPI_READY',
+              status: true
+            }).catch(error => {
+              console.error('APYSKY: Error al notificar que WAPI está listo:', error);
+            });
+
+            resolve();
+          }
+        } catch (error) {
+          console.error('APYSKY: Error al verificar estado de WAPI:', error);
+          cleanup();
+          reject(error);
+        }
+      }, 500);
+
+      (document.head || document.documentElement).appendChild(script);
     };
+
     script.onerror = (error) => {
-      console.error('APYSKY: Error al cargar WAPI:', error);
-      reject(new Error('No se pudo cargar WAPI'));
+      cleanup();
+      console.error('APYSKY: Error al cargar wapi-loader.js:', error);
+      reject(new Error(`No se pudo cargar wapi-loader.js: ${error.message || 'Error desconocido'}`));
     };
-    
-    document.head.appendChild(script);
   });
 }
 
@@ -233,265 +293,26 @@ function checkConnection() {
 
 
 /**
- * Verifica si WhatsApp Web está listo y carga WAPI si es necesario
+ * Envía un mensaje usando WAPI asegurando su carga previa
+ * @param {string} phoneNumber
+ * @param {string} message
  */
-async function checkWhatsAppStatus() {
-  if (state.isWhatsAppReady) return;
-
-  try {
-    const isLoaded = document.querySelector('div[data-testid="chat-list"]') !== null;
-    
-    if (isLoaded) {
-      console.log('APYSKY: WhatsApp Web detectado, cargando WAPI...');
-      await loadWAPI();
-      state.isWhatsAppReady = true;
-      console.log('APYSKY: WhatsApp Web listo');
-      
-      // Notificar al background script que WhatsApp está listo
-      chrome.runtime.sendMessage({ 
-        action: 'WHATSAPP_READY',
-        status: true 
-      });
-    }
-  } catch (error) {
-    console.error('APYSKY: Error al verificar estado de WhatsApp:', error);
+async function sendMessage(phoneNumber, message) {
+  if (!state.isWAPILoaded) {
+    await loadWAPI();
   }
+
+  if (!window.WAPI) {
+    throw new Error('WAPI no está disponible');
+  }
+
+  const result = await window.WAPI.sendMessage(phoneNumber, message);
+  return {
+    message: 'Mensaje enviado correctamente',
+    timestamp: new Date().toISOString(),
+    messageId: result.id
+  };
 }
 
-/**
- * Carga dinámicamente WAPI
- * @returns {Promise<void>}
- */
-async function loadWAPI() {
-  if (state.isWAPILoaded) {
-    console.log('APYSKY: WAPI ya está cargado');
-    return Promise.resolve();
-  }
-
-  return new Promise((resolve, reject) => {
-    // Verificar si WAPI ya está disponible
-    if (window.WAPI) {
-      console.log('APYSKY: WAPI ya está disponible globalmente');
-      state.isWAPILoaded = true;
-      return resolve();
-    }
-
-    console.log('APYSKY: Iniciando carga de WAPI...');
-
-    // Crear y configurar el script para cargar wapi-loader.js
-    const script = document.createElement('script');
-    script.src = chrome.runtime.getURL('wapi-loader.js');
-    script.onerror = (error) => {
-      console.error('APYSKY: Error al cargar wapi-loader.js:', error);
-      reject(new Error('No se pudo cargar wapi-loader.js'));
-    };
-
-    script.onload = () => {
-      console.log('APYSKY: wapi-loader.js cargado correctamente');
-      
-      let checkInterval;
-      let timeout;
-      
-      // Función para limpiar recursos
-      const cleanup = () => {
-        if (checkInterval) clearInterval(checkInterval);
-        if (timeout) clearTimeout(timeout);
-      };
-      
-      // Configurar un timeout para la carga de WAPI
-      timeout = setTimeout(() => {
-        cleanup();
-        if (!state.isWAPILoaded) {
-          const error = new Error('Tiempo de espera agotado al cargar WAPI');
-          console.error('APYSKY:', error.message);
-          reject(error);
-        }
-      }, CONFIG.WAPI_TIMEOUT);
-      
-      // Verificar periódicamente si WAPI está disponible
-      checkInterval = setInterval(() => {
-        try {
-          if (window.WAPI && window.WAPI.isReady) {
-            cleanup();
-            state.isWAPILoaded = true;
-            console.log('APYSKY: WAPI cargado y listo para usar');
-            
-            // Notificar al background que WAPI está listo
-            chrome.runtime.sendMessage({
-              action: 'WAPI_READY',
-              status: true
-            }).catch(error => {
-              console.error('APYSKY: Error al notificar que WAPI está listo:', error);
-            });
-            
-            resolve();
-          }
-        } catch (error) {
-          console.error('APYSKY: Error al verificar estado de WAPI:', error);
-          cleanup();
-          reject(error);
-        }
-      }, 500); // Verificar cada 500ms
-      
-      // Agregar el script al documento
-      (document.head || document.documentElement).appendChild(script);
-    };
-    
-    // Manejar errores de carga del script
-    script.onerror = (error) => {
-      cleanup();
-      console.error('APYSKY: Error al cargar wapi-loader.js:', error);
-      reject(new Error(`No se pudo cargar wapi-loader.js: ${error.message || 'Error desconocido'}`));
-    };
-  });
-}
-
-/**
- * Verifica el estado de la conexión con WhatsApp Web
- */
-function checkConnection() {
-  try {
-    const isAuthenticated = window.Store && 
-                         window.Store.State && 
-                         window.Store.State.Socket && 
-                         window.Store.State.Socket.stream === 'SYNCING';
-    
-    const isUILoaded = document.querySelector('div[data-testid="chat-list"]') !== null;
-    
-    return {
-      isConnected: isAuthenticated && isUILoaded,
-      isAuthenticated,
-      isUILoaded,
-      lastChecked: new Date().toISOString()
-    };
-  } catch (error) {
-    console.error('APYSKY: Error al verificar la conexión:', error);
-    return {
-      isConnected: false,
-      isAuthenticated: false,
-      isUILoaded: false,
-      error: error.message
-    };
-  }
-}
-
-// Función para inicializar el content script
-function initializeContentScript() {
-  console.log('APYSKY: Inicializando content script...');
-  
-  // Verificar si estamos en la página correcta
-  if (!window.location.href.includes('web.whatsapp.com')) {
-    console.log('APYSKY: No es la página de WhatsApp Web');
-    return;
-  }
-  
-  // Inicializar el MutationObserver
-  initMutationObserver();
-  
-  // Notificar al background que estamos listos
-  notifyBackgroundReady();
-}
-
-// Inicializar cuando el DOM esté listo
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', initializeContentScript);
-} else {
-  initializeContentScript();
-}
-
-// Escuchar mensajes del background script
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  console.log('APYSKY: Mensaje recibido en el content script:', request.action);
-  
-  // Manejar solicitud de verificación de conexión
-  if (request.action === 'CHECK_CONNECTION') {
-    console.log('APYSKY: Verificando estado de conexión...');
-    
-    // Usar un try-catch para manejar cualquier error inesperado
-    try {
-      const connectionStatus = checkConnection();
-      console.log('APYSKY: Estado de conexión:', connectionStatus);
-      
-      const response = { 
-        success: true, 
-        ...connectionStatus,
-        isWAPILoaded: state.isWAPILoaded,
-        isWhatsAppReady: state.isWhatsAppReady,
-        timestamp: new Date().toISOString()
-      };
-      
-      console.log('APYSKY: Enviando respuesta al background:', response);
-      sendResponse(response);
-    } catch (error) {
-      console.error('APYSKY: Error al verificar conexión:', error);
-      
-      const errorResponse = { 
-        success: false, 
-        error: error.message || 'Error desconocido al verificar la conexión',
-        isConnected: false,
-        isAuthenticated: false,
-        isUILoaded: false,
-        isWAPILoaded: state.isWAPILoaded,
-        isWhatsAppReady: state.isWhatsAppReady,
-        timestamp: new Date().toISOString()
-      };
-      
-      console.error('APYSKY: Enviando respuesta de error al background:', errorResponse);
-      sendResponse(errorResponse);
-    }
-    
-    // Devolver true para indicar que la respuesta será asíncrona
-    return true;
-  }
-
-  // Manejar solicitud de envío de mensaje
-  if (request.action === 'SEND_MESSAGE') {
-    const { phoneNumber, message } = request.payload;
-    console.log('APYSKY: Recibida solicitud para enviar mensaje a:', phoneNumber);
-    
-    const sendMessage = async () => {
-      try {
-        // Esperar a que WAPI esté disponible
-        if (!state.isWAPILoaded) {
-          await loadWAPI();
-        }
-        
-        // Validar que WAPI esté disponible
-        if (!window.WAPI) {
-          throw new Error('WAPI no está disponible');
-        }
-        
-        // Enviar el mensaje usando WAPI
-        const result = await window.WAPI.sendMessage(phoneNumber, message);
-        
-        console.log('APYSKY: Mensaje enviado con éxito:', result);
-        
-        return { 
-          success: true, 
-          message: 'Mensaje enviado correctamente',
-          timestamp: new Date().toISOString(),
-          messageId: result.id
-        };
-      } catch (error) {
-        console.error('APYSKY: Error al enviar mensaje con WAPI:', error);
-        throw error;
-      }
-    };
-    
-    // Ejecutar el envío y enviar la respuesta
-    sendMessage()
-      .then(result => sendResponse({ ...result, success: true }))
-      .catch(error => sendResponse({
-        success: false, 
-        error: error.message || 'Error desconocido al enviar el mensaje',
-        timestamp: new Date().toISOString()
-      }));
-      
-    return true; // Indica que la respuesta será asíncrona
-  }
-  
-  // Para cualquier otro tipo de mensaje, no hacemos nada
-  return false;
-});
 
 console.log('APYSKY: Content script completamente inicializado');
