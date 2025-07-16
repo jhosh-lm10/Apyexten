@@ -51,6 +51,7 @@ function handleSendMessage(request, sender, sendResponse) {
   console.log(`APYSKY: Preparando envío a ${phone}`);
   
   // Preparar el payload para WAPI
+  const jid = `${phone}@c.us`;
   const payload = { action: 'wapiSend', jid, text };
   
   // Función para manejar el envío del mensaje
@@ -71,7 +72,7 @@ function handleSendMessage(request, sender, sendResponse) {
   };
   
   // Buscar una pestaña existente o crear una nueva
-  findWhatsAppTab((tab) => {
+  findWhatsAppTab().then((tab) => {
     if (tab) {
       // Usar la pestaña existente
       sendWAPIMessage(tab);
@@ -109,7 +110,7 @@ function handleSendMessage(request, sender, sendResponse) {
   sendResponse({ success: true });
   
   // Buscar pestaña existente de WhatsApp
-  findWhatsAppTab((tab) => {
+  findWhatsAppTab().then((tab) => {
     if (tab) {
       // Si existe, actualizarla
       console.log('APYSKY: Actualizando pestaña existente de WhatsApp');
