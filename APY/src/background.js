@@ -1,22 +1,52 @@
 // background.js - Service Worker de la extensión
 
-// Almacena la pestaña activa de WhatsApp Web
+// Estado global para almacenar la pestaña activa de WhatsApp Web
+let whatsappTab = null;
 
 /**
  * Busca una pestaña de WhatsApp Web abierta
- * @param {Function} [callback] - Función de retorno opcional
  * @returns {Promise<chrome.tabs.Tab>}
  */
-async function findWhatsAppTab(callback) {
+async function findWhatsAppTab() {
   try {
     const tabs = await chrome.tabs.query({ url: 'https://web.whatsapp.com/*' });
-    const tab = tabs.length > 0 ? tabs[0] : null;
-    if (callback) callback(tab);
-    return tab;
+    whatsappTab = tabs.length > 0 ? tabs[0] : null;
+    return whatsappTab;
   } catch (error) {
     console.error('Error al buscar pestaña de WhatsApp:', error);
-    if (callback) callback(null);
+    whatsappTab = null;
     return null;
+  }
+}
+
+/**
+ * Verifica si WhatsApp Web está listo
+ * @returns {Promise<{isConnected: boolean, error?: string}>}
+ */
+async function checkWhatsAppConnection() {
+  try {
+    const tab = await findWhatsAppTab();
+    if (!tab) {
+      return { isConnected: false, error: 'No se encontró WhatsApp Web abierto' };
+    }
+
+    // Enviar mensaje al content script para verificar conexión
+    const response = await chrome.tabs.sendMessage(tab.id, { 
+      action: 'CHECK_CONNECTION' 
+    }).catch(error => ({
+      isConnected: false,
+      error: 'No se pudo conectar con el content script: ' + error.message
+    }));
+
+    return response || { 
+      isConnected: false, 
+      error: 'No se recibió respuesta del content script' 
+    };
+  } catch (error) {
+    return { 
+      isConnected: false, 
+      error: 'Error al verificar conexión: ' + error.message 
+    };
   }
 }
 
@@ -25,24 +55,27 @@ async function findWhatsAppTab(callback) {
  * @param {Object} request - Datos del mensaje
  * @param {Object} sender - Información del remitente
  * @param {Function} sendResponse - Función para enviar respuesta
+ * @returns {boolean} - true si la respuesta será asíncrona
  */
 function handleSendMessage(request, sender, sendResponse) {
+  // Validar datos
   const phone = (request.phone || '').replace(/\D/g, '');
   const text = (request.message || '').trim();
-  const jid = `${phone}@c.us`;
-
-  // Responder de inmediato para mantener el puerto abierto
-  sendResponse({ success: true });
   
-  // Validar datos
   if (!phone) {
-    console.error('Número de teléfono no válido');
-    return;
+    sendResponse({ 
+      success: false, 
+      error: 'Número de teléfono no válido' 
+    });
+    return false;
   }
   
   if (!text) {
-    console.error('El mensaje no puede estar vacío');
-    return;
+    sendResponse({ 
+      success: false, 
+      error: 'El mensaje no puede estar vacío' 
+    });
+    return false;
   }
   
   console.log(`APYSKY: Preparando envío a ${phone}`);
@@ -123,14 +156,44 @@ function handleSendMessage(request, sender, sendResponse) {
 
 console.log('APYSKY: Service Worker iniciado correctamente');
 
+// Inicializar buscando la pestaña de WhatsApp
+findWhatsAppTab().then(tab => {
+  console.log('APYSKY: Pestaña de WhatsApp encontrada:', tab ? tab.id : 'No encontrada');
+});
+
+// Escuchar cambios en las pestañas para actualizar la referencia
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (changeInfo.status === 'complete' && tab.url?.includes('web.whatsapp.com')) {
+    whatsappTab = tab;
+  }
+});
+
 // Manejar mensajes de la interfaz de usuario
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  console.log('Mensaje recibido en el service worker:', request.action);
+  
+  // Manejar solicitud de verificación de conexión
+  if (request.action === 'CHECK_WHATSAPP_CONNECTION') {
+    checkWhatsAppConnection()
+      .then(result => sendResponse(result))
+      .catch(error => ({
+        isConnected: false,
+        error: 'Error al verificar conexión: ' + error.message
+      }));
+    return true; // Indica que la respuesta será asíncrona
+  }
+
+  // Manejar solicitud de envío de mensaje
   if (request.action === 'SEND_MESSAGE') {
     handleSendMessage(request, sender, sendResponse);
-    return true; // Mantener el mensaje abierto para la respuesta asíncrona
-  } else if (request.action === 'CHECK_WHATSAPP_CONNECTION') {
-    checkWhatsAppConnection(sendResponse);
-    return true; // Mantener el mensaje abierto para la respuesta asíncrona
+    return true; // Indica que la respuesta será asíncrona
+  }
+  
+  // Manejar notificación de WhatsApp listo
+  if (request.action === 'WHATSAPP_READY') {
+    console.log('APYSKY: WhatsApp Web está listo');
+    sendResponse({ success: true });
+    return true;
   }
 });
 
