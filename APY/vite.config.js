@@ -40,6 +40,6 @@ export default defineConfig({
   base: './',
   server: {
     port: 3000,
-    open: false
+    open: true
   }
 });

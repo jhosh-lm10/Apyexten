@@ -72,8 +72,9 @@ function setupMessageHandler() {
       return true; // Respuesta asíncrona
     }
     
-    if (request.action === 'SEND_MESSAGE') {
-      const { phoneNumber, message } = request.payload;
+    if (request.action === 'SEND_MESSAGE' || request.action === 'wapiSend') {
+      const { phoneNumber, message } =
+        request.payload || { phoneNumber: request.jid, message: request.text };
       sendMessage(phoneNumber, message)
         .then(result => sendResponse({ ...result, success: true }))
         .catch(error =>
@@ -116,9 +117,13 @@ function setupMutationObserver() {
   }
 
   // Configurar el observador para detectar cambios en el DOM
-  state.observer = new MutationObserver((mutations) => {
-    // Verificar si WhatsApp está listo cuando se detecten cambios
-    checkWhatsAppStatus();
+  let debounceTimer;
+  state.observer = new MutationObserver(() => {
+    // Ejecutar con debounce para evitar spam de eventos de WhatsApp
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => {
+      checkWhatsAppStatus();
+    }, 300); // 300 ms entre chequeos
   });
 
   // Comenzar a observar cambios en el documento
@@ -139,18 +144,27 @@ function checkWhatsAppStatus() {
     return;
   }
 
-  // Verificar si el DOM de WhatsApp está listo
-  const isUILoaded = document.querySelector('div[data-testid="chat-list"]') !== null;
+  // Nuevos selectores para diferentes versiones de la UI
+  const UI_SELECTORS = [
+    'div[data-testid="chat-list"]',        // UI clásica
+    'div[id="pane-side"]',                 // UI junio-2024+
+    'div[role="grid"]'                     // Otra variante accesible
+  ];
+
+  const isUILoaded = UI_SELECTORS.some(sel => document.querySelector(sel));
   
   if (isUILoaded) {
     console.log('APYSKY: Interfaz de WhatsApp detectada');
+    // Detener observador para reducir carga
+    if (state.observer) state.observer.disconnect();
     loadWAPI();
-  } else if (state.initRetries < CONFIG.MAX_RETRIES) {
+  } else if (state.initRetries < CONFIG.MAX_RETRIES * 3) { // dar más tiempo a la nueva UI
     state.initRetries++;
     console.log(`APYSKY: Esperando interfaz de WhatsApp (intento ${state.initRetries}/${CONFIG.MAX_RETRIES})`);
     setTimeout(checkWhatsAppStatus, CONFIG.CHECK_INTERVAL);
   } else {
     console.error('APYSKY: No se pudo cargar la interfaz de WhatsApp después de varios intentos');
+    if (state.observer) state.observer.disconnect();
   }
 }
 
@@ -198,7 +212,7 @@ async function loadWAPI() {
 
       checkInterval = setInterval(() => {
         try {
-          if (window.WAPI && window.WAPI.isReady) {
+          if (window.WAPI) {
             cleanup();
             state.isWAPILoaded = true;
             console.log('APYSKY: WAPI cargado y listo para usar');
@@ -218,9 +232,10 @@ async function loadWAPI() {
           reject(error);
         }
       }, 500);
-
-      (document.head || document.documentElement).appendChild(script);
     };
+
+    // Insertar el script para comenzar a cargarlo
+    (document.head || document.documentElement).appendChild(script);
 
     script.onerror = (error) => {
       cleanup();
@@ -240,7 +255,7 @@ function verifyWhatsAppReady() {
 
   try {
     // Verificar si WAPI está disponible
-    if (window.WAPI && window.WAPI.isLoggedIn()) {
+    if (window.WAPI) {
       console.log('APYSKY: WhatsApp Web está listo');
       state.isWhatsAppReady = true;
       notifyBackgroundReady();

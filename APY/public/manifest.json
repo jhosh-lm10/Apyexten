@@ -34,7 +34,7 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["wapi-loader.js"],
+      "resources": ["wapi-loader.js", "contentScript.js"],
       "matches": ["https://web.whatsapp.com/*"]
     }
   ],

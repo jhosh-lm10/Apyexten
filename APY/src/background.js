@@ -50,9 +50,15 @@ function handleSendMessage(request, sender, sendResponse) {
   
   console.log(`APYSKY: Preparando envío a ${phone}`);
   
-  // Preparar el payload para WAPI
+  // Preparar el payload para el content script
   const jid = `${phone}@c.us`;
-  const payload = { action: 'wapiSend', jid, text };
+  const payload = {
+    action: 'SEND_MESSAGE',
+    payload: {
+      phoneNumber: jid,
+      message: text
+    }
+  };
   
   // Función para manejar el envío del mensaje
   const sendWAPIMessage = (tab) => {
@@ -61,14 +67,26 @@ function handleSendMessage(request, sender, sendResponse) {
       return;
     }
     
-    // Enviar el mensaje al content script
-    chrome.tabs.sendMessage(tab.id, payload, (response) => {
-      if (chrome.runtime.lastError) {
-        console.error('Error al enviar mensaje a la pestaña:', chrome.runtime.lastError);
-      } else if (response && !response.success) {
-        console.error('Error al enviar mensaje:', response.error);
-      }
-    });
+    const MAX_RETRIES = 5;
+    let attempts = 0;
+
+    const attemptSend = () => {
+      chrome.tabs.sendMessage(tab.id, payload, (response) => {
+        if (chrome.runtime.lastError) {
+          // Si no existe el content script aún, reintentar
+          if (chrome.runtime.lastError.message.includes('Could not establish connection') && attempts < MAX_RETRIES) {
+            attempts++;
+            console.warn(`Retry ${attempts}/${MAX_RETRIES} – Content script aún no disponible, reintentando...`);
+            return setTimeout(attemptSend, 1000);
+          }
+          console.error('Error al enviar mensaje a la pestaña:', chrome.runtime.lastError);
+        } else if (response && !response.success) {
+          console.error('Error al enviar mensaje:', response.error);
+        }
+      });
+    };
+
+    attemptSend();
   };
   
   // Buscar una pestaña existente o crear una nueva
@@ -188,6 +206,56 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 });
 
 /**
+ * Espera a que el content script de la pestaña indicada envíe CONTENT_SCRIPT_READY.
+ * @param {number} tabId
+ * @param {number} [timeoutMs=10000]
+ * @returns {Promise<void>}
+ */
+function waitForContentScript(tabId, timeoutMs = 10000) {
+  // Si ya está registrado como listo, no esperar
+  if (whatsappTabs.get(tabId)) return Promise.resolve();
+
+  return new Promise((resolve, reject) => {
+    const start = Date.now();
+
+    const interval = setInterval(() => {
+      if (whatsappTabs.get(tabId)) {
+        clearInterval(interval);
+        resolve();
+      } else if (Date.now() - start > timeoutMs) {
+        clearInterval(interval);
+        reject(new Error('Content script no respondió en el tiempo esperado'));
+      }
+    }, 500);
+  });
+}
+
+/**
+ * Inyecta manualmente contentScript.js en la pestaña indicada
+ * @param {number} tabId
+ * @returns {Promise<void>}
+ */
+function injectContentScript(tabId) {
+  return new Promise((resolve, reject) => {
+    chrome.scripting.executeScript(
+      {
+        target: { tabId },
+        files: ['contentScript.js']
+      },
+      (results) => {
+        if (chrome.runtime.lastError) {
+          console.error('APYSKY: Error al inyectar content script:', chrome.runtime.lastError);
+          reject(chrome.runtime.lastError);
+        } else {
+          console.log('APYSKY: contentScript.js inyectado manualmente');
+          resolve();
+        }
+      }
+    );
+  });
+}
+
+/**
  * Verifica la conexión con WhatsApp Web
  * @param {Function} [callback] - Función de retorno opcional
  * @returns {Promise<{isConnected: boolean, tabId?: number, error?: string}>}
@@ -223,8 +291,26 @@ async function checkWhatsAppConnection(callback) {
       return response;
     }
     
+    console.log('APYSKY: Esperando a que el content script esté listo...');
+
+    try {
+      await waitForContentScript(tab.id, 10000);
+    } catch (waitErr) {
+      console.warn('APYSKY: El content script no respondió a tiempo, intentando inyectar manualmente...');
+      try {
+        await injectContentScript(tab.id);
+        // esperar de nuevo brevemente
+        await waitForContentScript(tab.id, 5000);
+      } catch (injErr) {
+        console.error('APYSKY: No se pudo inyectar el content script:', injErr);
+        const resp = { isConnected: false, tabId: tab.id, error: 'No se pudo inyectar el content script' };
+        if (callback) callback(resp);
+        return resp;
+      }
+    }
+
     console.log('APYSKY: Enviando mensaje de verificación a la pestaña...');
-    
+
     // Enviar mensaje al content script para verificar la conexión
     try {
       const response = await new Promise((resolve) => {
@@ -236,10 +322,10 @@ async function checkWhatsAppConnection(callback) {
             error: 'Tiempo de espera agotado al verificar la conexión' 
           });
         }, 5000); // 5 segundos de timeout
-        
+
         chrome.tabs.sendMessage(tab.id, { action: 'CHECK_CONNECTION' }, (response) => {
           clearTimeout(timeout);
-          
+
           if (chrome.runtime.lastError) {
             console.error('APYSKY: Error al enviar mensaje al content script:', chrome.runtime.lastError);
             resolve({ 
