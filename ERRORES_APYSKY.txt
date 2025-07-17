@@ -1,0 +1,125 @@
+ERRORES DE LA EXTENSIÓN APYSKY WHATSAPP SENDER PRO
+=============================================
+
+ERRORES PRINCIPALES:
+-------------------
+
+1. Error: "Cannot use import statement outside a module"
+   Archivo: contentScript.js
+   Causa: El archivo contentScript.js está utilizando declaraciones de importación (import) pero no está configurado como un módulo ES.
+   Solución: Modificar el manifest.json para que contentScript.js se cargue como un módulo ES o cambiar el enfoque de importación.
+
+2. Error: "Could not establish connection. Receiving end does not exist."
+   Archivo: background.js
+   Causa: El background script no puede comunicarse con el content script porque este último no se está cargando correctamente debido al error de importación.
+   Solución: Arreglar el problema de importación en contentScript.js.
+
+LOGS DE ERROR COMPLETOS:
+----------------------
+
+XWXchw_sM2I.js:76 ErrorUtils caught an error:
+
+Converting to a string will drop content data. Hash="undefined" Translation="Bloquear a {contact_name}" Content="{"key":null,"ref":null,"props":{"contact":{"id":"51941309856@c.us","name":"Brandulas","shortName":"Brandulas","pushname":".","type":"in","isContactSyncCompleted":1,"textStatusLastUpdateTime":-1,"syncToAddressbook":true},"skipCheckMark":true,"truncate" (type=object,Object)
+
+Subsequent non-fatal errors won't be logged; see https://fburl.com/debugjs. Object
+errorListener @ XWXchw_sM2I.js:76
+
+chrome-extension://n…/contentScript.js:1 Uncaught SyntaxError: Cannot use import statement outside a module
+chrome-extension://n…/contentScript.js:1 Uncaught SyntaxError: Cannot use import statement outside a module
+contentScript.js:1 Uncaught SyntaxError: Cannot use import statement outside a module (at contentScript.js:1:1)
+
+APYSKY: Background Script cargado
+background.js:1 APYSKY: Inicializando estado de conexión...
+background.js:1 APYSKY: Background Script listo
+background.js:1 APYSKY: Estado de conexión inicial: Object
+background.js:1 APYSKY: Mensajes programados cargados: 0
+background.js:1 APYSKY: Verificando mensajes programados...
+background.js:1 APYSKY: No hay mensajes pendientes para enviar
+background.js:1 APYSKY: Mensaje recibido en background: Object
+background.js:1 APYSKY: Mensaje recibido en background: Object
+background.js:1 APYSKY: Mensaje recibido en background: Object
+background.js:1 APYSKY: Preparando envío de mensaje a: 51941309856
+background.js:1 APYSKY: Error al verificar el content script, reinyectando: Error: Could not establish connection. Receiving end does not exist.
+background.js:1 APYSKY: Enviando solicitud al content script...
+background.js:1 APYSKY: Error en intento 1: Error: Could not establish connection. Receiving end does not exist.
+background.js:1 APYSKY: Error en intento 2: Error: Could not establish connection. Receiving end does not exist.
+background.js:1 APYSKY: Error en intento 3: Error: Could not establish connection. Receiving end does not exist.
+background.js:1 APYSKY: Error final en sendMessage: Error: Could not establish connection. Receiving end does not exist.
+background.js:1 APYSKY: Mensaje recibido en background: Object
+background.js:1 APYSKY: Preparando envío de mensaje a: 51941309856
+background.js:1 APYSKY: Error al verificar el content script, reinyectando: Error: Could not establish connection. Receiving end does not exist.
+background.js:1 APYSKY: Enviando solicitud al content script...
+background.js:1 APYSKY: Error en intento 1: Error: Could not establish connection. Receiving end does not exist.
+background.js:1 APYSKY: Error en intento 2: Error: Could not establish connection. Receiving end does not exist.
+background.js:1 APYSKY: Error en intento 3: Error: Could not establish connection. Receiving end does not exist.
+background.js:1 APYSKY: Error final en sendMessage: Error: Could not establish connection. Receiving end does not exist.
+background.js:1 APYSKY: Mensaje recibido en background: Object
+background.js:1 APYSKY: Mensaje recibido en background: Object
+background.js:1 APYSKY: Preparando envío de mensaje a: 51941309856
+background.js:1 APYSKY: Error al verificar el content script, reinyectando: Error: Could not establish connection. Receiving end does not exist.
+background.js:1 APYSKY: Enviando solicitud al content script...
+background.js:1 APYSKY: Error en intento 1: Error: Could not establish connection. Receiving end does not exist.
+background.js:1 APYSKY: Error en intento 2: Error: Could not establish connection. Receiving end does not exist.
+background.js:1 APYSKY: Verificando mensajes programados...
+background.js:1 APYSKY: No hay mensajes pendientes para enviar
+background.js:1 APYSKY: Error en intento 3: Error: Could not establish connection. Receiving end does not exist.
+background.js:1 APYSKY: Error final en sendMessage: Error: Could not establish connection. Receiving end does not exist.
+
+SOLUCIONES PROPUESTAS:
+--------------------
+
+1. Modificar el manifest.json para cargar contentScript.js como un módulo ES:
+
+```json
+"content_scripts": [
+  {
+    "matches": ["https://web.whatsapp.com/*"],
+    "js": ["contentScript.js"],
+    "run_at": "document_idle",
+    "type": "module"
+  }
+]
+```
+
+2. Si la solución anterior no funciona (algunas versiones de Chrome no soportan módulos ES en content scripts), modificar contentScript.js para no usar importaciones:
+
+```javascript
+// En lugar de:
+import { injectScript } from './injectScript.js';
+
+// Usar:
+// Definir la función injectScript directamente en contentScript.js
+function injectScript() {
+  // Código de injectScript.js aquí
+}
+```
+
+3. Otra opción es utilizar la técnica de inyección dinámica:
+
+```javascript
+// En contentScript.js
+function loadScript(url) {
+  const script = document.createElement('script');
+  script.src = chrome.runtime.getURL(url);
+  script.type = 'module';
+  (document.head || document.documentElement).appendChild(script);
+  script.onload = function() {
+    script.remove();
+  };
+}
+
+// Cargar injectScript.js como un módulo
+loadScript('injectScript.js');
+```
+
+CONTEXTO ADICIONAL:
+-----------------
+
+El problema principal es que estamos intentando usar módulos ES (import/export) en un content script, pero esto no está soportado directamente en todas las versiones de Chrome. La extensión APYSKY está diseñada para interactuar con WhatsApp Web, pero los errores actuales impiden que el content script se cargue correctamente.
+
+Los archivos principales de la extensión son:
+- background.js: Script en segundo plano que gestiona la comunicación
+- contentScript.js: Script que se inyecta en WhatsApp Web
+- injectScript.js: Script que se inyecta en la página para acceder a la API interna de WhatsApp
+
+La comunicación entre estos componentes es esencial para el funcionamiento de la extensión, pero actualmente está fallando debido al error de importación en contentScript.js. 
