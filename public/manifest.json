@@ -16,8 +16,8 @@
     "activeTab",
     "scripting",
     "tabs",
-    "alarms",
-    "declarativeNetRequest"
+    "declarativeNetRequest",
+    "notifications"
   ],
   "host_permissions": [
     "https://web.whatsapp.com/*"
@@ -27,11 +27,6 @@
     "type": "module"
   },
   "content_scripts": [
-    {
-      "matches": ["https://web.whatsapp.com/*"],
-      "js": ["pageInjectLoader.js"],
-      "run_at": "document_start"
-    },
     {
       "matches": ["https://web.whatsapp.com/*"],
       "js": ["contentScript.js"],

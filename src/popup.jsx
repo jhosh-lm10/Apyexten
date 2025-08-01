@@ -1,338 +1,293 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import ReactQuill from 'react-quill';
+import React, { useState, useEffect } from 'react';
 import 'react-quill/dist/quill.snow.css';
 import 'react-datepicker/dist/react-datepicker.css';
-import DatePicker from 'react-datepicker';
 import './popup.css';
+
+// Componentes
+import Header from './components/Header';
+import StatusBar from './components/StatusBar';
+import ImageUpload from './components/ImageUpload';
+import MessageEditor from './components/MessageEditor';
+import MultiMessageEditor from './components/MultiMessageEditor';
+import SendButton from './components/SendButton';
+import SendStatus from './components/SendStatus';
+import TemplateModal from './components/TemplateModal';
+import TemplatesSection from './components/TemplatesSection';
+import NotificationSystem from './components/NotificationSystem';
+import ContactManager from './components/ContactManager';
+
+
+// Hooks
+import useWhatsApp from './hooks/useWhatsApp';
+import useNotifications from './hooks/useNotifications';
+
+// Utilidades
+import { validatePhoneNumbers, getPhoneNumberStats } from './utils/phoneValidator';
 
 /* ------------------------------------------------------------------
   UTILIDADES
 -------------------------------------------------------------------*/
-const formatDateTime = (date) =>
-  date.toLocaleString('es-ES', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-
-const getTimeRemaining = (scheduledTime) => {
-  const now = new Date();
-  const diff = scheduledTime - now;
-
-  if (diff <= 0) return '¡Ahora!';
-
-  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-  const hours = Math.floor((diff / (1000 * 60 * 60)) % 24);
-  const minutes = Math.floor((diff / 1000 / 60) % 60);
-
-  const parts = [];
-  if (days > 0) parts.push(`${days}d`);
-  if (hours > 0) parts.push(`${hours}h`);
-  if (minutes > 0 || parts.length === 0) parts.push(`${minutes}m`);
-
-  return `En ${parts.join(' ')}`;
-};
-
-const phoneRegex = /^\+?\d{6,15}$/;
 const parseNumbers = (text) => text.split(/[\n,\s]+/).filter(Boolean);
 const hasValidNumbers = (text) => {
-  const nums = parseNumbers(text);
-  return nums.length > 0 && nums.every((n) => phoneRegex.test(n));
+  const validation = validatePhoneNumbers(text);
+  return validation.isValid && validation.validCount > 0;
 };
-
-/* ------------------------------------------------------------------
-  MODAL PLANTILLAS
--------------------------------------------------------------------*/
-const TemplateModal = ({ isOpen, onClose, onSave, template = null }) => {
-  const [name, setName] = useState(template?.name || '');
-  const [content, setContent] = useState(template?.content || '');
-
-  useEffect(() => {
-    if (template) {
-      setName(template.name);
-      setContent(template.content);
-    } else {
-      setName('');
-      setContent('');
-    }
-  }, [template]);
-
-  if (!isOpen) return null;
-
-  return (
-    <div
-      style={{
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        backgroundColor: 'rgba(0,0,0,0.5)',
-        display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'center',
-        zIndex: 1000,
-      }}
-    >
-      <div
-        style={{
-          backgroundColor: 'white',
-          padding: '20px',
-          borderRadius: '8px',
-          width: '90%',
-          maxWidth: '600px',
-          maxHeight: '90vh',
-          display: 'flex',
-          flexDirection: 'column',
-        }}
-      >
-        <h3 style={{ marginTop: 0, color: '#b30000' }}>
-          {template ? 'Editar Plantilla' : 'Nueva Plantilla'}
-        </h3>
-
-        {/* Nombre */}
-        <div style={{ marginBottom: '15px' }}>
-          <label
-            style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}
-          >
-            Nombre de la plantilla:
-          </label>
-          <input
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            style={{
-              width: '100%',
-              padding: '8px',
-              border: '1px solid #ddd',
-              borderRadius: '4px',
-              boxSizing: 'border-box',
-            }}
-            placeholder="Ej: Recordatorio de pago"
-          />
-        </div>
-
-        {/* Contenido */}
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', marginBottom: '15px' }}>
-          <label style={{ marginBottom: '5px', fontWeight: 'bold' }}>Contenido:</label>
-          <ReactQuill
-            theme="snow"
-            value={content}
-            onChange={setContent}
-            style={{ flex: 1, display: 'flex', flexDirection: 'column' }}
-            modules={{
-              toolbar: [
-                [{ header: [1, 2, 3, false] }],
-                ['bold', 'italic', 'underline', 'strike'],
-                [{ list: 'ordered' }, { list: 'bullet' }],
-                ['link', 'image'],
-                ['clean'],
-              ],
-            }}
-            formats={[
-              'header',
-              'bold',
-              'italic',
-              'underline',
-              'strike',
-              'list',
-              'bullet',
-              'link',
-              'image',
-            ]}
-          />
-        </div>
-
-        {/* Acciones */}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-          <button
-            onClick={onClose}
-            style={{
-              padding: '8px 16px',
-              backgroundColor: '#f0f0f0',
-              border: '1px solid #ccc',
-              borderRadius: '4px',
-              cursor: 'pointer',
-            }}
-          >
-            Cancelar
-          </button>
-          <button
-            onClick={() => onSave({ id: template?.id, name, content })}
-            disabled={!name.trim() || !content.trim()}
-            style={{
-              padding: '8px 16px',
-              backgroundColor:
-                !name.trim() || !content.trim() ? '#ccc' : '#b30000',
-              color: 'white',
-              border: 'none',
-              borderRadius: '4px',
-              cursor:
-                !name.trim() || !content.trim() ? 'not-allowed' : 'pointer',
-            }}
-          >
-            {template ? 'Actualizar' : 'Guardar'} Plantilla
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
-/* ------------------------------------------------------------------
-  ESTILOS QUILL (inline para no depender de archivo externo)
--------------------------------------------------------------------*/
-const customStyles = `
-  .ql-toolbar.ql-snow {
-    border: 1px solid #b30000 !important;
-    border-radius: 4px 4px 0 0 !important;
-  }
-  .ql-container.ql-snow {
-    border: 1px solid #b30000 !important;
-    border-top: none !important;
-    border-radius: 0 0 4px 4px !important;
-    min-height: 150px;
-  }
-  .ql-editor {
-    min-height: 150px;
-  }
-  .ql-toolbar button:hover,
-  .ql-toolbar button.ql-active {
-    color: #b30000 !important;
-  }
-  .ql-toolbar button.ql-active .ql-stroke {
-    stroke: #b30000 !important;
-  }
-  .ql-toolbar button.ql-active .ql-fill {
-    fill: #b30000 !important;
-  }
-`;
 
 /* ------------------------------------------------------------------
   COMPONENTE PRINCIPAL
 -------------------------------------------------------------------*/
 function Popup() {
-  /* --------------------
-     ESTADOS CONEXIÓN WA
-  ---------------------*/
-  const [isWhatsAppReady, setIsWhatsAppReady] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
+  console.log('🚀 APYSKY: Componente Popup COMPLETO iniciando...');
+  
+  // Sistema de notificaciones
+  const {
+    notifications,
+    removeNotification,
+    showSuccess,
+    showError,
+    showWarning,
+    showInfo
+  } = useNotifications();
 
-  /* --------------------
-     ESTADOS ENVÍO
-  ---------------------*/
+  // Hook personalizado para WhatsApp
+  const {
+    isWhatsAppReady,
+    isLoading,
+    isSending,
+    setIsSending,  // ✅ Get setIsSending to force reset
+    sendStatus,
+    setSendStatus,
+    checkWhatsAppStatus,
+    sendMessage,
+    sendImage,
+    retryCount
+  } = useWhatsApp({ showSuccess, showError, showWarning, showInfo });
+
+  // Estados del formulario
   const [numbers, setNumbers] = useState('');
   const [message, setMessage] = useState('');
-  const [isSending, setIsSending] = useState(false);
-  const [sendStatus, setSendStatus] = useState({ success: null, message: '' });
-  const [selectedImage, setSelectedImage] = useState(null);   // File
-  const [previewUrl, setPreviewUrl] = useState('');           // DataURL
+  const [selectedImage, setSelectedImage] = useState(null);
+  const [previewUrl, setPreviewUrl] = useState('');
 
-  /* --------------------
-     PLANTILLAS
-  ---------------------*/
+  // Estados de UI
+  const [showTemplatesModal, setShowTemplatesModal] = useState(false);
+
+  const [showContactManager, setShowContactManager] = useState(false);
+
+  
+  // 🚫 Estado para restricción de pestaña WhatsApp
+  const [isOnWhatsAppTab, setIsOnWhatsAppTab] = useState(false);
+  
+  // 🚀 NUEVO: Estado para modo Multi-Sección
+  const [isMultiSectionMode, setIsMultiSectionMode] = useState(false);
+  const [messageSections, setMessageSections] = useState([]);
+
+  // Estados para plantillas dinámicas
   const [templates, setTemplates] = useState([]);
-  const [showTemplates, setShowTemplates] = useState(false);
-  const [showTemplateModal, setShowTemplateModal] = useState(false);
-  const [editingTemplate, setEditingTemplate] = useState(null);
-  const [previewTemplate, setPreviewTemplate] = useState(null);
 
-  /* --------------------
-     IMPORT / EXPORT
-  ---------------------*/
-  const [importExportOpen, setImportExportOpen] = useState(false);
-  const [importData, setImportData] = useState('');
+  // Cargar plantillas al iniciar
+  useEffect(() => {
+    loadTemplates();
+  }, []);
 
-  /* --------------------
-     PROGRAMADOS
-  ---------------------*/
-  const [scheduledMessages, setScheduledMessages] = useState([]);
-  const [scheduleDate, setScheduleDate] = useState(() => {
-    const date = new Date();
-    date.setMinutes(date.getMinutes() + 5);
-    return date;
-  });
-  const [delayBetweenMessages, setDelayBetweenMessages] = useState(5); // segundos por defecto
-  const [showScheduled, setShowScheduled] = useState(false);
+  // 🚫 Verificar si estamos en pestaña de WhatsApp Web
+  useEffect(() => {
+    const checkWhatsAppTab = async () => {
+      try {
+        // Obtener pestaña actual
+        const [currentTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        const isWhatsApp = currentTab.url.includes('web.whatsapp.com');
+        setIsOnWhatsAppTab(isWhatsApp);
+        
+        if (!isWhatsApp) {
+          console.log('⚠️ APYSKY: No estás en WhatsApp Web. URL actual:', currentTab.url);
+      }
+    } catch (error) {
+        console.error('APYSKY: Error verificando pestaña:', error);
+        setIsOnWhatsAppTab(false);
+      }
+    };
 
-  /* --------------------
-     CONFIG EDITOR
-  ---------------------*/
-  const modules = useMemo(
-    () => ({
-      toolbar: [
-        [{ header: [1, 2, 3, false] }],
-        ['bold', 'italic', 'underline', 'strike'],
-        [{ list: 'ordered' }, { list: 'bullet' }],
-        ['link', 'image'],
-        ['clean'],
-      ],
-    }),
-    []
-  );
+    checkWhatsAppTab();
+    
+    // Verificar cada vez que la pestaña cambie
+    const interval = setInterval(checkWhatsAppTab, 2000);
+    return () => clearInterval(interval);
+  }, []);
 
-  const formats = [
-    'header',
-    'bold',
-    'italic',
-    'underline',
-    'strike',
-    'list',
-    'bullet',
-    'link',
-    'image',
-    'color',
-    'background',
-  ];
+  const loadTemplates = async () => {
+    try {
+      const result = await chrome.storage.local.get(['templates']);
+      const savedTemplates = result.templates || [];
+      setTemplates(savedTemplates);
+      } catch (error) {
+      console.error('Error cargando plantillas:', error);
+    }
+  };
+
+  // Función para procesar variables de plantillas en el texto
+  const processTemplateVariables = (text) => {
+    if (!text || templates.length === 0) return text;
+    
+    let processedText = text;
+    
+    // Buscar variables entre comillas: "nombrePlantilla"
+    const quotedVariables = text.match(/"([^"]+)"/g);
+    if (quotedVariables) {
+      quotedVariables.forEach(match => {
+        const templateName = match.slice(1, -1); // Remover comillas
+        const template = templates.find(t => 
+          t.name.toLowerCase() === templateName.toLowerCase()
+        );
+        if (template) {
+          const templateContent = template.processedContent || template.content;
+          processedText = processedText.replace(match, templateContent);
+        }
+      });
+    }
+
+    // Buscar variables entre paréntesis: (nombrePlantilla)
+    const parenthesisVariables = text.match(/\(([^)]+)\)/g);
+    if (parenthesisVariables) {
+      parenthesisVariables.forEach(match => {
+        const templateName = match.slice(1, -1); // Remover paréntesis
+        const template = templates.find(t => 
+          t.name.toLowerCase() === templateName.toLowerCase()
+        );
+        if (template) {
+          const templateContent = template.processedContent || template.content;
+          processedText = processedText.replace(match, templateContent);
+        }
+      });
+    }
+
+    return processedText;
+  };
+
+  // Función para usar plantillas (modo tradicional)
+  const handleUseTemplate = (content) => {
+    setMessage(content);
+  };
+
+  // Función para aplicar variables de plantillas al mensaje actual
+  const handleApplyTemplateVariables = () => {
+    const processedMessage = processTemplateVariables(message);
+    if (processedMessage !== message) {
+      setMessage(processedMessage);
+      showSuccess('Variables de plantillas aplicadas al mensaje');
+    } else {
+      showInfo('No se encontraron variables de plantillas en el mensaje');
+    }
+  };
+
+  // Obtener sugerencias de plantillas para mostrar
+  const getTemplateSuggestions = () => {
+    return templates.map(t => ({
+      name: t.name,
+      preview: (t.processedContent || t.content).substring(0, 100) + '...'
+    }));
+  };
+
+  // Validación de números en tiempo real
+  const phoneStats = getPhoneNumberStats(numbers);
 
   /* ------------------------------------------------------------------
-    HELPERS EXTENSIÓN
+    🚀 FUNCIONES MULTI-SECCIÓN
   ------------------------------------------------------------------*/
-  const isExtensionEnvironment = () =>
-    typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage;
+  const sendMultipleSections = async (phoneNumbers, sections) => {
+    const validNumbers = parseNumbers(phoneNumbers);
+    const totalMessages = sections.length * validNumbers.length;
+    
+    // ✅ Silencioso - sin notificaciones de inicio
 
-  // ------------------- VERIFICAR CONEXIÓN -------------------
-  const checkWhatsAppStatus = useCallback(async () => {
-    if (!isExtensionEnvironment()) {
-      console.log('APYSKY: No es un entorno de extensión. Simulando conexión.');
-      setIsLoading(false);
-      setIsWhatsAppReady(true); // En desarrollo, asumimos que está listo.
+    let successCount = 0;
+    let errorCount = 0;
+    
+    // ✅ FLUJO CORRECTO: Para cada número, enviar todas las secciones
+    for (let numberIndex = 0; numberIndex < validNumbers.length; numberIndex++) {
+      const currentNumber = validNumbers[numberIndex];
+      
+      console.log(`🚀 APYSKY: Iniciando envío para contacto ${numberIndex + 1}/${validNumbers.length}: ${currentNumber}`);
+
+      // Enviar todas las secciones a este número
+      for (let sectionIndex = 0; sectionIndex < sections.length; sectionIndex++) {
+        const section = sections[sectionIndex];
+        const processedText = processTemplateVariables(section.text);
+        
+        console.log(`📝 APYSKY: Enviando sección ${sectionIndex + 1}/${sections.length} a ${currentNumber}`);
+
+        try {
+          let result;
+          if (section.image) {
+            // Enviar como imagen con caption
+            console.log(`📸 APYSKY: Enviando imagen a ${currentNumber}`);
+            result = await sendImage(currentNumber, section.image, processedText);
+          } else {
+            // Enviar como mensaje de texto
+            console.log(`💬 APYSKY: Enviando texto a ${currentNumber}`);
+            result = await sendMessage(currentNumber, processedText);
+          }
+
+          console.log(`📊 APYSKY: Resultado para ${currentNumber}:`, result);
+
+          if (result && result.successCount > 0) {
+          successCount++;
+            console.log(`✅ APYSKY: Éxito para ${currentNumber} - Total éxitos: ${successCount}`);
+        } else {
+          errorCount++;
+            console.log(`❌ APYSKY: Error para ${currentNumber} - Total errores: ${errorCount}`);
+          }
+
+          // Delay entre secciones del mismo contacto (8 segundos para estabilidad)
+          if (sectionIndex < sections.length - 1) {
+            console.log(`⏳ APYSKY: Esperando 8s entre secciones...`);
+            await new Promise(resolve => setTimeout(resolve, 8000)); // ✅ Aumentado a 8s para secciones múltiples
+          }
+
+      } catch (error) {
+          console.error(`💥 APYSKY: Error crítico enviando a ${currentNumber}:`, error);
+        errorCount++;
+      }
+      }
+
+      // Delay entre contactos (12 segundos) - solo si no es el último contacto
+      if (numberIndex < validNumbers.length - 1) {
+        console.log(`⏳ APYSKY: Esperando 12s antes del siguiente contacto...`);
+        await new Promise(resolve => setTimeout(resolve, 12000)); // ✅ Aumentado a 12s para contactos múltiples
+      }
+      
+      console.log(`🏁 APYSKY: Completado contacto ${numberIndex + 1}/${validNumbers.length}: ${currentNumber}`);
+    }
+
+    // ✅ Resumen final simple - sin notificaciones molestas
+    // Los mensajes se enviaron, no necesitamos spam de notificaciones
+
+    return { successCount, errorCount, totalMessages };
+  };
+
+  /* ------------------------------------------------------------------
+    MANEJO DE IMÁGENES
+  ------------------------------------------------------------------*/
+  const handleImageSelect = (file) => {
+    // Validar tamaño de archivo (16MB máximo para WhatsApp)
+    const maxSize = 16 * 1024 * 1024; // 16MB
+    if (file.size > maxSize) {
+      showError('La imagen es demasiado grande. WhatsApp tiene un límite de 16MB.', {
+        title: 'Imagen Demasiado Grande',
+        details: `Tamaño actual: ${(file.size / 1024 / 1024).toFixed(2)}MB\nMáximo permitido: 16MB`
+      });
       return;
     }
 
-    try {
-      setIsLoading(true);
-      const response = await chrome.runtime.sendMessage({ action: 'GET_WHATSAPP_STATUS' });
-      if (response && response.tabId) {
-        console.log('APYSKY: Estado de WhatsApp recibido:', response);
-        setIsWhatsAppReady(response.isWhatsAppReady);
-      } else {
-        console.error('APYSKY: Respuesta inválida del background al verificar estado.');
-        setIsWhatsAppReady(false);
-      }
-    } catch (error) {
-      console.error('APYSKY: Error al verificar la conexión con WhatsApp Web:', error);
-      setIsWhatsAppReady(false);
-    } finally {
-      setIsLoading(false);
+    // Validar formato de archivo
+    const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+    if (!validTypes.includes(file.type)) {
+      showError('Formato de imagen no soportado. Usa JPG, PNG, GIF o WEBP.', {
+        title: 'Formato No Válido',
+        details: `Formato detectado: ${file.type}\nFormatos válidos: ${validTypes.join(', ')}`
+      });
+      return;
     }
-  }, []);
-
-  // Cargar estado al iniciar
-  useEffect(() => {
-    checkWhatsAppStatus();
-    // También podrías añadir un listener para actualizaciones en tiempo real si fuera necesario
-    // chrome.runtime.onMessage.addListener(...);
-  }, [checkWhatsAppStatus]);
-
-
-  // ------------------- LÓGICA DE ENVÍO DE IMÁGENES -------------------
-  
-  // Manejar selección de imagen
-  const handleImageSelect = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
     
     setSelectedImage(file);
     
@@ -341,787 +296,518 @@ function Popup() {
     reader.onloadend = () => {
       setPreviewUrl(reader.result);
     };
+    reader.onerror = () => {
+      showError('Error al leer el archivo de imagen');
+    };
     reader.readAsDataURL(file);
     
-    // Resetear el input para permitir seleccionar la misma imagen de nuevo
-    e.target.value = '';
+    showSuccess(`Imagen cargada: ${file.name}`, {
+      title: 'Imagen Seleccionada',
+      duration: 3000
+    });
   };
   
-  // Limpiar imagen seleccionada
   const clearImage = () => {
     setSelectedImage(null);
     setPreviewUrl('');
-    setMessage(''); // Limpiar el mensaje cuando se quita la imagen
+    setMessage('');
+    
     // Enfocar el editor después de limpiar la imagen
     setTimeout(() => {
       const editor = document.querySelector('.ql-editor');
       if (editor) {
         editor.focus();
       }
-    }, 0);
+    }, 100);
   };
-  
-  // Enviar imagen a todos los números
-  const sendImageToAll = async () => {
-    if (!selectedImage) return;
-    const nums = parseNumbers(numbers);
-    if (!nums.length) {
-      setSendStatus({ success: false, message: 'Agrega números antes de enviar' });
-      return;
-    }
+
+  /* ------------------------------------------------------------------
+    MANEJO DE ENVÍO
+  ------------------------------------------------------------------*/
+  const handleSend = async (e) => {
+    e.preventDefault();
     
-    // Limpiar el mensaje después de enviar la imagen
-    const currentMessage = message;
-    setMessage('');
-
-    setIsSending(true);
-    let ok = 0, fail = 0;
-
-    for (const [idx, num] of nums.entries()) {
-      try {
-        await handleSendImage(num, selectedImage, cleanHtml(currentMessage));
-        ok++;
-      } catch (error) {
-        console.error(`APYSKY: Error al enviar a ${num}:`, error);
-        fail++;
-      }
-      
-      // Pausa mínima para no saturar
-      if (idx < nums.length - 1) await new Promise(r => setTimeout(r, 800));
-      
-      // Actualizar estado
-      setSendStatus({
-        success: null,
-        message: `Enviando... (${ok + fail}/${nums.length})`
+    // Validaciones previas
+    if (!isWhatsAppReady) {
+      showWarning('WhatsApp Web no está conectado. Haz clic en actualizar estado.', {
+        title: 'WhatsApp No Disponible'
       });
-    }
-
-    setIsSending(false);
-    setSendStatus({
-      success: fail === 0,
-      message: `Imágenes enviadas. Éxitos: ${ok} | Fallos: ${fail}`
-    });
-    
-    // Limpiar la imagen después de enviar
-    setSelectedImage(null);
-    setPreviewUrl('');
-  };
-  
-  // Función para enviar una sola imagen
-  const handleSendImage = async (phoneNumber, imageFile, caption = '') => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = async (e) => {
-        try {
-          const dataUrl = e.target.result;
-          const response = await chrome.runtime.sendMessage({
-            action: 'SEND_IMAGE',
-            payload: {
-              to: phoneNumber,
-              dataUrl,
-              caption,
-              delay: 2000
-            }
-          });
-          resolve(response);
-        } catch (error) {
-          console.error('APYSKY: Error al enviar imagen:', error);
-          reject(error);
-        }
-      };
-      reader.onerror = (error) => {
-        console.error('APYSKY: Error al leer la imagen:', error);
-        reject(new Error('Error al leer el archivo de imagen'));
-      };
-      reader.readAsDataURL(imageFile);
-    });
-  };
-
-  // ------------------- MANEJO DE ENVÍO -------------------
-  
-  // Limpiar HTML para mensajes de texto
-  function cleanHtml(html) {
-    if (!html) return '';
-    const doc = new DOMParser().parseFromString(html, 'text/html');
-    return doc.body.textContent || "";
-  }
-
-  const sendBulkMessages = async (phoneNumbersText, messageText) => {
-    if (!isExtensionEnvironment()) {
-      alert(`Simulando envío a:\n${phoneNumbersText}\n\nMensaje:\n${messageText}`);
       return;
     }
-
-    const phoneNumbers = parseNumbers(phoneNumbersText);
-    if (phoneNumbers.length === 0) {
-      setSendStatus({ success: false, message: 'No hay números válidos para enviar.' });
-      return;
-    }
-
-    setIsSending(true);
-    setSendStatus({ success: null, message: `Enviando ${phoneNumbers.length} mensajes...` });
-
-    let successCount = 0;
-    let errorCount = 0;
     
-    for (const [index, number] of phoneNumbers.entries()) {
-      const cleanNumber = number.replace(/\D/g, '');
-      const cleanedMessage = cleanHtml(messageText); // Limpiamos el mensaje aquí.
-       setSendStatus({ success: null, message: `Enviando a ${cleanNumber} (${index + 1}/${phoneNumbers.length})` });
-      try {
-        console.log(`APYSKY: Iniciando envío a ${cleanNumber}`);
-        const response = await chrome.runtime.sendMessage({
-          action: 'SEND_MESSAGE',
-          payload: { to: cleanNumber, message: cleanedMessage }
-        });
-        
-        console.log("APYSKY: Respuesta recibida:", response);
-
-        if (response && response.success) {
-          console.log(`APYSKY: Mensaje a ${cleanNumber} enviado con éxito.`);
-          successCount++;
-        } else {
-          console.error(`APYSKY: Error al enviar mensaje a ${cleanNumber}:`, response?.error);
-          errorCount++;
-        }
-      } catch (error) {
-        console.error(`APYSKY: Error catastrófico al enviar a ${cleanNumber}:`, error);
-        errorCount++;
-      }
-      
-      // Pausa entre mensajes para no saturar
-      if (index < phoneNumbers.length - 1) {
-        await new Promise(resolve => setTimeout(resolve, 1000));
-      }
-    }
-    
-    setIsSending(false);
-    setSendStatus({
-      success: errorCount === 0,
-      message: `Envío completado. Éxitos: ${successCount}. Fallos: ${errorCount}.`
-    });
-  };
-
-  /* ------------------------------------------------------------------
-     USEEFFECTS
-   ------------------------------------------------------------------*/
-  useEffect(() => {
-    checkWhatsAppStatus();
-
-    const handleMessage = (message) => {
-      if (message.action === 'WHATSAPP_CONNECTED') {
-        setIsWhatsAppReady(true);
-        setIsLoading(false);
-      } else if (message.action === 'WHATSAPP_DISCONNECTED') {
-        setIsWhatsAppReady(false);
-        setIsLoading(false);
-      }
-    };
-
-    if (isExtensionEnvironment()) {
-      chrome.runtime.onMessage.addListener(handleMessage);
-    }
-
-    return () => {
-      if (isExtensionEnvironment()) {
-        chrome.runtime.onMessage.removeListener(handleMessage);
-      }
-    };
-  }, [checkWhatsAppStatus]);
-
-  /* ------------------------------------------------------------------
-     STORAGE HELPERS
-  ------------------------------------------------------------------*/
-  const getStorageData = async (keys) => {
-    if (isExtensionEnvironment()) return chrome.storage.local.get(keys);
-
-    const result = {};
-    if (Array.isArray(keys)) {
-      keys.forEach((key) => {
-        const value = localStorage.getItem(key);
-        if (value !== null) result[key] = JSON.parse(value);
+    if (!hasValidNumbers(numbers)) {
+      showError('Por favor, ingresa números de teléfono válidos', {
+        title: 'Números Inválidos',
+        details: 'Formato correcto: +código_país + número\nEjemplo: +51987654321'
       });
-    } else if (typeof keys === 'string') {
-      const value = localStorage.getItem(keys);
-      if (value !== null) result[keys] = JSON.parse(value);
-    } else if (keys === null) {
-      for (let i = 0; i < localStorage.length; i += 1) {
-        const key = localStorage.key(i);
-        result[key] = JSON.parse(localStorage.getItem(key));
-      }
-    }
-    return result;
-  };
-
-  const setStorageData = async (data) => {
-    if (isExtensionEnvironment()) return chrome.storage.local.set(data);
-
-    Object.entries(data).forEach(([key, value]) => localStorage.setItem(key, JSON.stringify(value)));
-  };
-
-  /* ------------------------------------------------------------------
-     CARGAR PLANTILLAS Y PROGRAMADOS
-  ------------------------------------------------------------------*/
-  useEffect(() => {
-    const loadData = async () => {
-      try {
-        const result = await getStorageData(['templates', 'scheduledMessages']);
-        if (result.templates) setTemplates(result.templates);
-        if (result.scheduledMessages) setScheduledMessages(result.scheduledMessages);
-      } catch (error) {
-        console.error('Error al cargar datos:', error);
-      }
-    };
-
-    loadData();
-
-    if (isExtensionEnvironment()) {
-      const interval = setInterval(checkScheduledMessages, 60000);
-      return () => clearInterval(interval);
-    }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  /* ------------------------------------------------------------------
-     PROGRAMADOS: ENVÍO Y CHEQUEO
-  ------------------------------------------------------------------*/
-  const sendScheduledMessage = async () => {
-    if (!isExtensionEnvironment()) return;
-
-    const now = new Date();
-    const { scheduledMessages: messages = [] } = await getStorageData('scheduledMessages');
-
-    const messagesToSend = messages.filter((msg) => new Date(msg.scheduledTime) <= now);
-    const remainingMessages = messages.filter((msg) => new Date(msg.scheduledTime) > now);
-
-    if (messagesToSend.length) {
-      await Promise.all(messagesToSend.map(async (msg) => {
-        try {
-          const [tab] = await chrome.tabs.query({ url: 'https://web.whatsapp.com/*' });
-          if (!tab) throw new Error('No se encontró una pestaña de WhatsApp Web abierta');
-
-          await chrome.scripting.executeScript({
-            target: { tabId: tab.id },
-            func: (n, m) => window.postMessage({ type: 'APYSKY_SEND', numeros: n, mensaje: m }, '*'),
-            args: [msg.numbers, msg.content],
-          });
-          return { ...msg, sentAt: new Date().toISOString() };
-        } catch (error) {
-          console.error(`Error al enviar mensaje programado con ID ${msg.id}:`, error);
-          return { ...msg, error: error.message || 'Error desconocido' };
-        }
-      }));
-      await setStorageData({ scheduledMessages: remainingMessages });
-      setScheduledMessages(remainingMessages);
-
-      if (chrome.notifications) {
-        chrome.notifications.create({
-          type: 'basic',
-          iconUrl: 'icon128.png',
-          title: 'Mensajes Enviados',
-          message: `Se han enviado ${messagesToSend.length} mensajes programados`,
-        });
-      }
-    }
-  };
-
-  const checkScheduledMessages = async () => {
-    try {
-      if (!isExtensionEnvironment()) {
-        console.log('Simulando verificación de mensajes programados');
         return;
       }
 
-      // Obtener mensajes programados desde el background script
-      const response = await chrome.runtime.sendMessage({
-        action: 'GET_SCHEDULED_MESSAGES'
-      });
+    // 🚀 VALIDACIÓN DIFERENTE SEGÚN EL MODO
+    if (isMultiSectionMode) {
+      // Validar que hay secciones y al menos una tiene contenido
+      if (!messageSections || messageSections.length === 0) {
+        showError('Debes crear al menos una sección de mensaje', {
+          title: 'Secciones Requeridas'
+        });
+        return;
+      }
 
-      if (response && response.success) {
-        // Actualizar el estado con los mensajes programados
-        setScheduledMessages(response.data || []);
+      const validSections = messageSections.filter(section => {
+        // Validación simple con textarea - sin HTML
+        const hasText = section.text && section.text.trim() !== '';
+        const hasImage = section.image;
+        
+        return hasText || hasImage;
+      });
+      
+      if (validSections.length === 0) {
+        showError('Al menos una sección debe tener texto o imagen', {
+          title: 'Contenido de Secciones Requerido'
+        });
+        return;
+      }
       } else {
-        console.error('Error al obtener mensajes programados:', response?.error);
+      // Validación modo simple
+      if (!selectedImage && (!message || message.trim() === '')) {
+        showError('Debes escribir un mensaje o seleccionar una imagen', {
+          title: 'Contenido Requerido'
+        });
+        return;
+      }
+    }
+
+    const phoneCount = parseNumbers(numbers).length;
+    const isMultiple = phoneCount > 1;
+
+    // 🚀 LÓGICA DIFERENTE SEGÚN EL MODO
+    if (isMultiSectionMode) {
+      // Confirmación para modo multi-sección
+      const validSections = messageSections.filter(section => {
+        // Validación simple con textarea - sin HTML
+        const hasText = section.text && section.text.trim() !== '';
+        const hasImage = section.image;
+        
+        return hasText || hasImage;
+      });
+      
+      const totalMessages = validSections.length * phoneCount;
+      const confirmMessage = `🚀 MODO MULTI-SECCIÓN\n\n` +
+        `¿Enviar ${validSections.length} mensajes a ${phoneCount} ${isMultiple ? 'contactos' : 'contacto'}?\n` +
+        `Total de envíos: ${totalMessages}\n\n` +
+        `Mensajes:\n${validSections.map((section, i) => 
+          `${i + 1}. ${section.image ? '📸 Imagen + ' : ''}${section.text.substring(0, 50)}${section.text.length > 50 ? '...' : ''}`
+        ).join('\n')}`;
+
+      if (!window.confirm(confirmMessage)) {
+        return;
+      }
+
+      // Enviar múltiples secciones
+      try {
+        const result = await sendMultipleSections(numbers, validSections);
+        
+        // Limpiar después del envío exitoso
+        if (result && result.successCount > 0) {
+          setMessageSections([]);
       }
     } catch (error) {
-      console.error('Error al verificar mensajes programados:', error);
-    }
-  };
-
-  /* ------------------------------------------------------------------
-     ENVÍO INMEDIATO / PROGRAMAR VIA UI
-  ------------------------------------------------------------------*/
-
-  const scheduleMessage = async ({ numbers: nums, content, scheduledTime }) => {
-    try {
-      if (!isExtensionEnvironment()) {
-        console.log('Simulando programación de mensaje');
-        return { success: true };
+        // Silencioso - manejo de errores sin spam
       }
-
-      const phoneNumbers = parseNumbers(nums);
-      if (!phoneNumbers.length) {
-        throw new Error('No hay números de teléfono válidos');
+      
+      // ✅ CRITICAL: Force reset isSending state regardless of result
+      // This ensures the button never gets stuck
+      if (setIsSending) {
+        setIsSending(false);
       }
+      
+      // ✅ Also reset status to unlock UI immediately
+      if (setSendStatus) {
+        setSendStatus({ success: null, message: '' });
+      }
+    } else {
+      // 🚀 MODO SIMPLE (comportamiento original)
+      const finalMessage = processTemplateVariables(message);
+      const hasVariables = finalMessage !== message;
 
-      setIsSending(true);
-      setSendStatus({ success: null, message: `Programando ${phoneNumbers.length} mensajes...` });
-
-      const results = [];
-      let successCount = 0;
-
-      for (const phone of phoneNumbers) {
-        try {
-          // Limpiar el número de teléfono
-          const cleanPhone = phone.replace(/[^0-9]/g, '');
-          
-          // Programar el mensaje a través del background script
-          const response = await chrome.runtime.sendMessage({
-            action: 'SCHEDULE_MESSAGE',
-            payload: {
-              to: cleanPhone,
-              message: content,
-              scheduledDate: scheduledTime.toISOString(),
-              delay: delayBetweenMessages
-            }
-          });
-
-          results.push({
-            phone,
-            success: response.success,
-            data: response.data,
-            error: response.error
-          });
-
-          if (response.success) {
-            successCount++;
-          }
-        } catch (error) {
-          console.error(`Error al programar mensaje para ${phone}:`, error);
-          results.push({
-            phone,
-            success: false,
-            error: error.message || 'Error desconocido'
-          });
+      let confirmMessage;
+      if (selectedImage) {
+        confirmMessage = `¿Estás seguro de enviar esta imagen a ${phoneCount} ${isMultiple ? 'contactos' : 'contacto'}?`;
+      } else {
+        confirmMessage = `¿Estás seguro de enviar este mensaje a ${phoneCount} ${isMultiple ? 'contactos' : 'contacto'}?`;
+        if (hasVariables) {
+          confirmMessage += `\n\n🔧 Mensaje final (con plantillas procesadas):\n"${finalMessage.substring(0, 200)}${finalMessage.length > 200 ? '...' : ''}"`;
         }
       }
 
-      const finalMessage = `
-        Programación completada:
-        • Total: ${phoneNumbers.length}
-        • Exitosos: ${successCount}
-        • Fallidos: ${phoneNumbers.length - successCount}
-        • Fecha programada: ${formatDateTime(scheduledTime)}
-      `;
-
-      setSendStatus({
-        success: successCount > 0,
-        message: finalMessage
-      });
-
-      // Actualizar la lista de mensajes programados
-      await checkScheduledMessages();
-
-      return { success: successCount > 0, results };
-    } catch (error) {
-      console.error('Error al programar mensajes:', error);
-      setSendStatus({
-        success: false,
-        message: `Error: ${error.message || 'Error desconocido'}`
-      });
-      return { success: false, error: error.message };
-    } finally {
-      setIsSending(false);
-    }
-  };
-
-  const cancelScheduledMessage = async (id) => {
-    try {
-      if (!isExtensionEnvironment()) {
-        console.log('Simulando cancelación de mensaje programado');
-        return { success: true };
+      if (!window.confirm(confirmMessage)) {
+        return;
       }
 
-      // Eliminar el mensaje programado a través del background script
-      const response = await chrome.runtime.sendMessage({
-        action: 'DELETE_SCHEDULED_MESSAGE',
-        payload: { id }
-      });
+      // ✅ Silencioso - sin notificación de inicio molesta
 
-      if (response && response.success) {
-        // Actualizar la lista de mensajes programados
-        await checkScheduledMessages();
-        return { success: true };
+      try {
+        let result;
+        if (selectedImage) {
+          result = await sendImage(numbers, selectedImage, finalMessage);
+          // Limpiar después del envío
+          if (result && (result.success || result.successCount > 0)) {
+            setSelectedImage(null);
+            setPreviewUrl('');
+            setMessage('');
+          }
       } else {
-        throw new Error(response?.error || 'Error al cancelar el mensaje programado');
+          result = await sendMessage(numbers, finalMessage);
+          // Limpiar mensaje después del envío exitoso
+          if (result && (result.success || result.successCount > 0)) {
+            setMessage('');
       }
+        }
+
+        // ✅ Silencioso - sin notificación de variables molesta
+
+        // Las notificaciones ya se manejan dentro de los hooks
     } catch (error) {
-      console.error('Error al cancelar mensaje programado:', error);
-      return { success: false, error: error.message };
+        // ✅ Silencioso - sin notificación de error molesta
+      }
     }
   };
 
   /* ------------------------------------------------------------------
-     CRUD PLANTILLAS
+    MANEJO DE PLANTILLAS - YA IMPLEMENTADO ARRIBA
   ------------------------------------------------------------------*/
-  const saveTemplate = async (template) => {
-    const updatedTemplates = template.id
-      ? templates.map((t) => (t.id === template.id ? template : t))
-      : [...templates, { ...template, id: Date.now().toString(), createdAt: new Date().toISOString() }];
-
-    await setStorageData({ templates: updatedTemplates });
-    setTemplates(updatedTemplates);
-    setShowTemplateModal(false);
-    setEditingTemplate(null);
-  };
-
-  const deleteTemplate = async (id) => {
-    if (!window.confirm('¿Estás seguro de eliminar esta plantilla?')) return;
-    const updated = templates.filter((t) => t.id !== id);
-    await setStorageData({ templates: updated });
-    setTemplates(updated);
-  };
-
-  const applyTemplate = (template) => {
-    setMessage(template.content);
-    setShowTemplates(false);
-  };
 
   /* ------------------------------------------------------------------
-     IMPORT / EXPORT
+    MANEJO DE CONTACTOS
   ------------------------------------------------------------------*/
-  const exportTemplates = () => {
-    const data = JSON.stringify(templates, null, 2);
-    const blob = new Blob([data], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `apysky-templates-${new Date().toISOString().split('T')[0]}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  };
-
-  const importTemplates = () => {
-    try {
-      const imported = JSON.parse(importData);
-      if (!Array.isArray(imported)) throw new Error('El archivo no contiene un array de plantillas válido');
-      const valid = imported.filter((t) => t && typeof t === 'object' && 'name' in t && 'content' in t);
-      if (!valid.length) throw new Error('No se encontraron plantillas válidas');
-
-      const existingIds = new Set(templates.map((t) => t.id));
-      const merged = [...templates, ...valid.filter((t) => !existingIds.has(t.id))];
-      setTemplates(merged);
-      setStorageData({ templates: merged });
-      setImportData('');
-      setImportExportOpen(false);
-      alert(`Se importaron ${valid.length} plantillas correctamente`);
-    } catch (error) {
-      console.error('Error al importar plantillas:', error);
-      alert(`Error al importar plantillas: ${error.message}`);
-    }
+  const handleContactsSelect = (selectedPhones) => {
+    setNumbers(selectedPhones);
+    showSuccess(`Números de contactos cargados`, {
+      title: 'Contactos Seleccionados'
+    });
   };
 
   /* ------------------------------------------------------------------
      RENDER
   ------------------------------------------------------------------*/
   return (
-    <div style={{ padding: '15px', width: '400px', fontFamily: 'Arial', maxHeight: '80vh', display: 'flex', flexDirection: 'column' }}>
-      {/* Estilos Quill */}
-      <style>{customStyles}</style>
-      <style>{`
-        /* Estilos para la carga de imágenes */
-        .image-upload-section {
-          margin: 15px 0;
-        }
-        
-        .upload-area {
-          border: 2px dashed #ccc;
-          border-radius: 8px;
-          padding: 20px;
-          text-align: center;
-          cursor: pointer;
-          transition: all 0.3s ease;
-          margin-top: 5px;
-        }
-        
-        .upload-area:hover {
-          border-color: #b30000;
-          background-color: #fff9f9;
-        }
-        
-        .upload-placeholder {
-          color: #666;
-        }
-        
-        .upload-placeholder span {
-          font-size: 24px;
-          display: block;
-          margin-bottom: 5px;
-        }
-        
-        .image-preview {
-          position: relative;
-          margin-top: 10px;
-          border: 1px solid #eee;
-          border-radius: 8px;
-          overflow: hidden;
-        }
-        
-        .preview-image {
-          max-width: 100%;
-          max-height: 200px;
-          display: block;
-          margin: 0 auto;
-        }
-        
-        .image-actions {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          padding: 5px 10px;
-          background-color: #f9f9f9;
-          border-top: 1px solid #eee;
-        }
-        
-        .remove-image-btn {
-          background: #ffebee;
-          border: 1px solid #ffcdd2;
-          color: #c62828;
-          border-radius: 50%;
-          width: 24px;
-          height: 24px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          cursor: pointer;
-          font-size: 16px;
-          line-height: 1;
-        }
-        
-        .remove-image-btn:hover {
-          background: #ffcdd2;
-        }
-        
-        .image-info {
-          font-size: 0.85em;
-          color: #666;
-          margin-left: 10px;
-        }
-        
-        /* Ajustes para el formulario */
-        .form-control {
-          width: 100%;
-          padding: 8px 12px;
-          border: 1px solid #ddd;
-          border-radius: 4px;
-          margin-top: 5px;
-        }
-        
-        .quill-disabled-message {
-          height: 100%;
-          display: flex;
-          flex-direction: column;
-          justify-content: center;
-          align-items: center;
-          text-align: center;
-          padding: 20px;
-          color: #666;
-          background-color: #f9f9f9;
-          border: 1px dashed #ddd;
-          border-radius: 4px;
-        }
-        
-        .quill-disabled-message p {
-          margin: 5px 0;
-        }
-      `}</style>
+    <>
+      {/* Sistema de notificaciones */}
+      <NotificationSystem 
+        notifications={notifications}
+        onDismiss={removeNotification}
+      />
+      
+      <div className="popup-container">
+        {/* 🚫 RESTRICCIÓN: Solo funciona en WhatsApp Web */}
+        {!isOnWhatsAppTab ? (
+          <div style={{
+            padding: '40px 20px',
+            textAlign: 'center',
+            backgroundColor: '#fff3cd',
+            borderRadius: '8px',
+            margin: '20px',
+            border: '2px solid #ffeaa7'
+          }}>
+            <div style={{ fontSize: '48px', marginBottom: '16px' }}>⚠️</div>
+            <h3 style={{ color: '#856404', marginBottom: '12px' }}>
+              Extensión Bloqueada
+            </h3>
+            <p style={{ color: '#856404', marginBottom: '16px', lineHeight: '1.5' }}>
+              Esta extensión solo funciona cuando estás en <strong>WhatsApp Web</strong>.
+            </p>
+            <p style={{ fontSize: '14px', color: '#856404', marginBottom: '20px' }}>
+              Por favor, abre una pestaña con <code>web.whatsapp.com</code> y vuelve a intentar.
+            </p>
+          <button
+              onClick={() => window.open('https://web.whatsapp.com', '_blank')}
+            style={{
+                backgroundColor: '#25D366',
+                color: 'white',
+                border: 'none',
+                padding: '12px 24px',
+                borderRadius: '6px',
+              cursor: 'pointer',
+                fontSize: '14px',
+                fontWeight: 'bold'
+              }}
+            >
+              🚀 Abrir WhatsApp Web
+          </button>
+          </div>
+        ) : (
+          <>
+            {/* Header */}
+            <Header
+              onOpenTemplates={() => setShowTemplatesModal(true)}
 
-      {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
-        <h2 style={{ color: '#b30000', margin: 0 }}>Apysky</h2>
-        <div style={{ display: 'flex', gap: '10px' }}>
-          <button
-            onClick={() => setShowScheduled((v) => !v)}
-            style={{
-              background: showScheduled ? '#b30000' : 'transparent',
-              border: '1px solid #b30000',
-              color: showScheduled ? 'white' : '#b30000',
-              padding: '5px 10px',
-              borderRadius: '4px',
-              cursor: 'pointer',
+              onOpenContacts={() => setShowContactManager(true)}
+            />
+
+      {/* Status Bar */}
+              <StatusBar
+          isLoading={isLoading}
+          isWhatsAppReady={isWhatsAppReady}
+          onRefresh={checkWhatsAppStatus}
+        />
+        
+        {/* Indicador de reintentos automáticos */}
+        {retryCount > 0 && (
+          <div style={{
+            padding: '8px 20px',
+            background: '#fff3cd',
+            color: '#856404',
+            borderBottom: '1px solid #ffeaa7',
               fontSize: '12px',
               display: 'flex',
               alignItems: 'center',
-              gap: '5px',
-            }}
-          >
-            <span>⏰</span>
-            {showScheduled ? 'Ocultar' : 'Ver'} Programados
-          </button>
-          <button
-            onClick={() => setShowTemplates((v) => !v)}
-            style={{
-              background: showTemplates ? '#b30000' : 'transparent',
-              border: '1px solid #b30000',
-              color: showTemplates ? 'white' : '#b30000',
-              padding: '5px 10px',
-              borderRadius: '4px',
-              cursor: 'pointer',
-              fontSize: '12px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '5px',
-            }}
-          >
-            <span>📋</span>
-            {showTemplates ? 'Ocultar' : 'Ver'} Plantillas
-          </button>
+            gap: '8px'
+          }}>
+            <span>🔄</span>
+            Reintentando conexión automáticamente... (intento {retryCount}/3)
         </div>
-      </div>
-      <div className="status-bar">
-        <span
-          className={`status-dot ${
-            isLoading ? 'loading' : isWhatsAppReady ? 'connected' : 'disconnected'
-          }`}
-        ></span>
-        <span>
-          {isLoading
-            ? 'Verificando conexión...'
-            : isWhatsAppReady
-            ? 'Conectado a WhatsApp'
-            : 'No se pudo conectar a WhatsApp'}
-        </span>
-        <button onClick={checkWhatsAppStatus} disabled={isLoading} className="refresh-btn">
-          ↻
-        </button>
-      </div>
+        )}
 
-      {/* CONTENIDO PRINCIPAL */}
-      <div className="main-content">
-        <div className="left-panel">
+      {/* Main Content - UNA SOLA COLUMNA */}
+      <div className="main-content-single">
+          {/* Campo de números */}
           <div className="form-group">
-            <label>Números de teléfono (separados por comas o saltos de línea):</label>
+            <label>
+              Números de teléfono 
+              <small style={{ color: '#6c757d', fontWeight: 'normal' }}>
+                (separados por comas o saltos de línea)
+              </small>
+            </label>
             <textarea
               value={numbers}
               onChange={(e) => setNumbers(e.target.value)}
               rows={4}
               placeholder="Ej: +51987654321, +51987654322"
+              style={{ 
+                fontFamily: 'Monaco, Consolas, monospace',
+                fontSize: '13px'
+              }}
             />
             
-            {/* Sección de carga de imagen */}
-            <div className="image-upload-section">
-              <label>Imagen a enviar (opcional):</label>
-              {previewUrl ? (
-                <div className="image-preview">
-                  <img src={previewUrl} alt="Vista previa" className="preview-image" />
-                  <div className="image-actions">
-                    <button 
-                      type="button" 
-                      onClick={clearImage}
-                      className="remove-image-btn"
-                      title="Quitar imagen"
-                    >
-                      ×
-                    </button>
-                    <span className="image-info">
-                      {selectedImage.name} ({(selectedImage.size / 1024).toFixed(1)} KB)
+            {/* Botón eliminado - ahora solo está en el Header */}
+            
+            {/* Estadísticas de números */}
+            {numbers && (
+              <div style={{ marginTop: '10px' }}>
+                <div style={{ 
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  fontSize: '12px'
+                }}>
+                  <span style={{ 
+                    color: phoneStats.valid > 0 ? '#25D366' : '#dc3545'
+                  }}>
+                    {phoneStats.total} número(s) detectado(s)
                     </span>
+                  
+                  {phoneStats.valid > 0 && phoneStats.invalid > 0 && (
+                    <span style={{ color: '#dc3545' }}>
+                      ({phoneStats.invalid} inválidos)
+                    </span>
+                  )}
+                  
+                  {phoneStats.duplicates > 0 && (
+                    <span style={{ color: '#ffc107' }}>
+                      ({phoneStats.duplicates} duplicados)
+                    </span>
+                  )}
                   </div>
-                  <div className="form-group" style={{ marginTop: '10px' }}>
-                    <label>Pie de foto (opcional):</label>
-                    <input
-                      type="text"
-                      value={message}
-                      onChange={(e) => setMessage(e.target.value)}
-                      placeholder="Escribe un mensaje para acompañar la imagen"
-                      className="form-control"
-                    />
+                
+                {/* Mostrar países detectados */}
+                {phoneStats.countries.length > 0 && (
+                  <div style={{ marginTop: '5px', fontSize: '11px', color: '#6c757d' }}>
+                    Países: {phoneStats.countries.map(c => `${c.flag} ${c.country} (${c.count})`).join(', ')}
                   </div>
+                )}
+                
+                {phoneStats.invalid > 0 && (
+                  <div style={{ 
+                    marginTop: '5px', 
+                    fontSize: '11px', 
+                    color: '#dc3545',
+                    cursor: 'pointer'
+                  }}
+                  onClick={() => {
+                    const validation = validatePhoneNumbers(numbers);
+                    const errorDetails = validation.errors.join('\n');
+                    showError('Se encontraron números inválidos', {
+                      title: 'Números con Errores',
+                      details: errorDetails
+                    });
+                  }}>
+                    ⚠️ Hacer clic para ver detalles de errores
                 </div>
-              ) : (
-                <div className="upload-area" onClick={() => document.getElementById('image-upload').click()}>
-                  <input
-                    type="file"
-                    id="image-upload"
-                    accept="image/*"
-                    onChange={handleImageSelect}
-                    style={{ display: 'none' }}
-                  />
-                  <div className="upload-placeholder">
-                    <span>+</span>
-                    <p>Haz clic para seleccionar una imagen</p>
-                  </div>
+                )}
                 </div>
               )}
             </div>
-          </div>
-<>
-            <button
-              onClick={(e) => {
-                e.preventDefault();
-                if (!selectedImage) {
-                  // Lógica para enviar solo mensaje de texto
-                  const phoneNumbers = parseNumbers(numbers);
-                  if (window.confirm(`¿Estás seguro de enviar este mensaje a ${phoneNumbers.length} ${phoneNumbers.length === 1 ? 'contacto' : 'contactos'}?`)) {
-                    sendBulkMessages(numbers, message);
-                  }
-                } else {
-                  // Lógica para enviar imagen
-                  sendImageToAll();
-                }
-              }}
-              disabled={isSending || isLoading || !isWhatsAppReady || !hasValidNumbers(numbers) || (!selectedImage && !message.trim())}
-              className="send-button"
-              style={{
-                backgroundColor: selectedImage ? '#4CAF50' : '#b30000',
-                marginTop: '10px',
-                width: '100%'
-              }}
-            >
-              {isSending 
-                ? 'Enviando...' 
-                : selectedImage 
-                  ? `Enviar Imagen${parseNumbers(numbers).length > 1 ? 'es' : ''} (${parseNumbers(numbers).length})` 
-                  : `Enviar Mensaje${parseNumbers(numbers).length > 1 ? 's' : ''} (${parseNumbers(numbers).length})`}
-            </button>
-            
 
-          </>
-          
-          {sendStatus.message && (
-            <div
-              className={`send-status ${
-                sendStatus.success === true
-                  ? 'success'
-                  : sendStatus.success === false
-                  ? 'error'
-                  : ''
-              }`}
+          {/* 🚀 TOGGLE DE MODO - JUSTO DESPUÉS DE NÚMEROS */}
+          <div className="mode-toggle-container">
+          <button
+              onClick={() => setIsMultiSectionMode(false)}
+              className={`mode-toggle-btn ${!isMultiSectionMode ? 'active' : ''}`}
             >
-              {sendStatus.message}
-            </div>
-          )}
-        </div>
-        <div className="right-panel">
-          {!previewUrl ? (
-            <ReactQuill
-              theme="snow"
-              value={message}
-              onChange={setMessage}
-              modules={modules}
-              formats={formats}
-              placeholder="Escribe tu mensaje aquí..."
-            />
+              Mensaje Simple
+          </button>
+          <button
+              onClick={() => setIsMultiSectionMode(true)}
+              className={`mode-toggle-btn ${isMultiSectionMode ? 'active' : ''}`}
+            >
+              Multi-Sección
+        </button>
+          </div>
+
+          {/* 🚀 EDITOR SEGÚN EL MODO */}
+          {!isMultiSectionMode ? (
+            // MODO SIMPLE
+            <>
+          <div className="form-group">
+                <label>
+                  Mensaje
+                  {selectedImage && (
+                    <small style={{ color: '#6c757d', fontWeight: 'normal' }}>
+                      (será usado como pie de foto)
+                    </small>
+                  )}
+                </label>
+              </div>
+              
+              <MessageEditor
+                message={message}
+                setMessage={setMessage}
+                disabled={!!previewUrl}
+                placeholder={
+                  selectedImage 
+                    ? "Escribe un pie de foto para tu imagen..."
+                    : "Escribe tu mensaje aquí... Usa \"nombrePlantilla\" o (nombrePlantilla) para insertar plantillas"
+                }
+              />
+
+              {/* Upload de imagen - Solo en modo simple */}
+              <ImageUpload
+                selectedImage={selectedImage}
+                previewUrl={previewUrl}
+                onImageSelect={handleImageSelect}
+                onClearImage={clearImage}
+                message={message}
+                setMessage={setMessage}
+              />
+            </>
           ) : (
-            <div className="quill-disabled-message">
-              <p>El editor está deshabilitado mientras tengas una imagen seleccionada.</p>
-              <p>Puedes agregar un pie de foto en el campo de texto superior.</p>
+            // MODO MULTI-SECCIÓN
+            <MultiMessageEditor
+              sections={messageSections}
+              setSections={setMessageSections}
+              disabled={false}
+            />
+          )}
+
+          {/* Botón de envío */}
+          <SendButton
+            onSend={handleSend}
+            isSending={isSending}
+            isLoading={isLoading}
+            isWhatsAppReady={isWhatsAppReady}
+            hasValidNumbers={hasValidNumbers(numbers)}
+            numbers={numbers}
+            selectedImage={selectedImage}
+            message={isMultiSectionMode ? messageSections : message}
+            isMultiSection={isMultiSectionMode}
+          />
+
+          {/* Estado del envío */}
+          <SendStatus status={sendStatus} />
+
+          {/* Herramientas de plantillas dinámicas - Solo en modo simple */}
+          {!isMultiSectionMode && message && templates.length > 0 && (
+            <div style={{
+                marginTop: '10px',
+              padding: '12px',
+              background: '#f8f9fa',
+              borderRadius: '6px',
+              border: '1px solid #e9ecef'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                <span style={{ fontSize: '12px', color: '#666', fontWeight: '500' }}>
+                  🔧 Variables de Plantillas
+                </span>
+            <button
+                  onClick={handleApplyTemplateVariables}
+              style={{
+                    background: '#17a2b8',
+                    color: 'white',
+                    border: 'none',
+                    padding: '4px 8px',
+                    borderRadius: '4px',
+                    fontSize: '11px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  ✨ Aplicar Variables
+            </button>
+              </div>
+              
+              {/* Sugerencias de plantillas disponibles */}
+              <div style={{ fontSize: '11px', color: '#666', lineHeight: '1.4' }}>
+                <strong>Plantillas disponibles:</strong> {templates.map(t => `"${t.name}"`).join(', ')}
+              </div>
+              
+              {/* Vista previa si hay variables detectadas */}
+              {(() => {
+                const processed = processTemplateVariables(message);
+                if (processed !== message) {
+                  return (
+                    <div style={{ 
+                      marginTop: '8px', 
+                      fontSize: '11px', 
+                      color: '#28a745',
+                      background: '#d4edda',
+                      padding: '6px',
+                      borderRadius: '4px'
+                    }}>
+                      <strong>Vista previa:</strong><br/>
+                      {processed.substring(0, 200)}{processed.length > 200 ? '...' : ''}
+            </div>
+                  );
+                }
+                return null;
+              })()}
             </div>
           )}
+
+            </div>
+          </>
+          )}
         </div>
-      </div>
-    </div>
+          
+      {/* SOLO renderizar un modal a la vez */}
+      {showTemplatesModal && (
+        <TemplatesSection
+          isOpen={showTemplatesModal}
+          onClose={() => setShowTemplatesModal(false)}
+          notifications={{ showSuccess, showError, showWarning, showInfo }}
+          onUseTemplate={handleUseTemplate}
+        />
+      )}
+
+      {showContactManager && (
+        <ContactManager
+          isOpen={showContactManager}
+          onClose={() => setShowContactManager(false)}
+          onContactsSelect={handleContactsSelect}
+          notifications={{ showSuccess, showError, showWarning, showInfo }}
+        />
+      )}
+
+
+    </>
   );
 }
 

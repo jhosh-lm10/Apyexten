@@ -17,16 +17,90 @@ const state = {
     messageQueue: [],
     isSending: false,
     currentSendingPromise: null,
-    delayBetweenMessages: 5000, // 5 segundos entre mensajes
-    delayBetweenImages: 7000 // 7 segundos entre imágenes
+            delayBetweenMessages: 5000, // ✅ 5 segundos entre mensajes (optimizado)
+    delayBetweenImages: 6000, // ✅ 6 segundos entre imágenes (optimizado)
+    lastStatusCheck: 0 // Cache para verificaciones de estado
 };
+
+// ------------------- FUNCIONES DE PLANTILLAS -------------------
+
+/**
+ * Procesa variables de plantillas en el background
+ * Similar a processTemplateVariables() del popup pero para el background
+ */
+async function processTemplateVariablesInBackground(text) {
+    console.log(`🔧 APYSKY: processTemplateVariablesInBackground - Entrada: "${text}"`);
+    
+    if (!text) {
+        console.log(`⚠️ APYSKY: Texto vacío recibido en processTemplateVariablesInBackground`);
+        return text;
+    }
+    
+    try {
+        // Obtener plantillas del storage
+        const result = await chrome.storage.local.get(['templates']);
+        const templates = result.templates || [];
+        
+        console.log(`📋 APYSKY: Plantillas disponibles: ${templates.length}`);
+        templates.forEach(t => console.log(`  - "${t.name}": "${t.content?.substring(0, 50)}..."`));
+        
+        if (templates.length === 0) {
+            console.log(`⚠️ APYSKY: No hay plantillas disponibles`);
+            return text;
+        }
+        
+        let processedText = text;
+        
+        // Buscar variables entre comillas: "nombrePlantilla"
+        const quotedVariables = text.match(/"([^"]+)"/g);
+        if (quotedVariables) {
+            quotedVariables.forEach(match => {
+                const templateName = match.slice(1, -1); // Remover comillas
+                const template = templates.find(t => 
+                    t.name.toLowerCase() === templateName.toLowerCase()
+                );
+                if (template) {
+                    const templateContent = template.processedContent || template.content;
+                    processedText = processedText.replace(match, templateContent);
+                    console.log(`🔧 APYSKY: Reemplazado "${templateName}" con plantilla`);
+                }
+            });
+        }
+
+        // Buscar variables entre paréntesis: (nombrePlantilla)
+        const parenthesisVariables = text.match(/\(([^)]+)\)/g);
+        if (parenthesisVariables) {
+            parenthesisVariables.forEach(match => {
+                const templateName = match.slice(1, -1); // Remover paréntesis
+                const template = templates.find(t => 
+                    t.name.toLowerCase() === templateName.toLowerCase()
+                );
+                if (template) {
+                    const templateContent = template.processedContent || template.content;
+                    processedText = processedText.replace(match, templateContent);
+                    console.log(`🔧 APYSKY: Reemplazado (${templateName}) con plantilla`);
+                }
+            });
+        }
+
+        console.log(`🔧 APYSKY: processTemplateVariablesInBackground - Salida: "${processedText}"`);
+        return processedText;
+        
+    } catch (error) {
+        console.error('APYSKY: Error procesando plantillas en background:', error);
+        return text; // Devolver texto original si hay error
+    }
+}
 
 // ------------------- INICIALIZACIÓN Y GESTIÓN DE PESTAÑA -------------------
 
 async function getOrCreateWhatsAppTab() {
     const tabs = await chrome.tabs.query({ url: `${WHATSAPP_WEB_URL}*` });
     if (tabs.length > 0) {
-        console.log('APYSKY: Pestaña de WhatsApp Web encontrada:', tabs[0].id);
+        // Solo logear si es una pestaña diferente para evitar spam
+        if (state.whatsappTabId !== tabs[0].id) {
+            console.log('APYSKY: Nueva pestaña WhatsApp Web:', tabs[0].id);
+        }
         state.whatsappTabId = tabs[0].id;
         return tabs[0];
     }
@@ -53,7 +127,8 @@ async function processQueue() {
         // Eliminar el mensaje procesado de la cola
         state.messageQueue.shift();
         
-        // Esperar antes de procesar el siguiente mensaje
+        // Esperar antes de procesar el siguiente mensaje (más tiempo para estabilidad)
+        console.log(`⏳ APYSKY: Esperando ${state.delayBetweenMessages/1000}s antes del siguiente envío...`);
         await new Promise(resolve => setTimeout(resolve, state.delayBetweenMessages));
     } catch (error) {
         console.error(`Error al enviar mensaje a ${to}:`, error);
@@ -84,7 +159,7 @@ async function sendMessage(to, message) {
 }
 
 async function sendSingleMessage(to, message) {
-    console.log(`APYSKY: Preparando envío de mensaje (UI) a: ${to}`);
+    console.log(`🚀 APYSKY: Preparando envío de mensaje (UI) a: ${to}`);
     
     // El mensaje ya viene limpio desde el popup.
     const encodedMessage = encodeURIComponent(message);
@@ -92,25 +167,41 @@ async function sendSingleMessage(to, message) {
     const tab = await getOrCreateWhatsAppTab();
     const url = `${WHATSAPP_WEB_URL}send?phone=${to}&text=${encodedMessage}`;
     
-    console.log(`APYSKY: Navegando a la URL de envío en la pestaña ${tab.id}`);
+    console.log(`📱 APYSKY: Navegando a la URL de envío en la pestaña ${tab.id}`);
 
     return new Promise((resolve, reject) => {
-        // Guardamos las funciones de resolución para usarlas en el listener.
-        state.currentSendingPromise = { resolve, reject };
-
-        // Creamos un timeout para no esperar indefinidamente.
+        // Creamos un timeout para no esperar indefinidamente (aumentado para mejor estabilidad)
         const timeoutId = setTimeout(() => {
-            if (state.currentSendingPromise) {
-                console.error('APYSKY: Timeout esperando la confirmación del content script.');
+            if (state.currentSendingPromise && state.currentSendingPromise.timeoutId === timeoutId) {
+                console.error(`❌ APYSKY: Timeout esperando la confirmación del content script para: ${to}`);
                 state.currentSendingPromise.reject(new Error('Timeout esperando confirmación del envío por UI'));
                 state.currentSendingPromise = null;
             }
-        }, 60000); // Aumentado a 60 segundos de timeout
+        }, 90000); // ✅ Aumentado a 90s para segundo número
+
+        // ✅ Guardamos las funciones de resolución Y el timeoutId para cancelarlo
+        state.currentSendingPromise = { resolve, reject, timeoutId };
 
         // El listener se encargará de resolver esta promesa.
-        chrome.tabs.update(tab.id, { url, active: true }, () =>
-            console.log('APYSKY: Actualización de pestaña completada.')
-        );
+        chrome.tabs.update(tab.id, { url, active: true }, () => {
+            console.log('📱 APYSKY: Actualización de pestaña completada.');
+            
+            // Inyectar content script manualmente para asegurar que esté cargado
+            setTimeout(() => {
+                console.log('🔄 APYSKY: Verificando si content script está cargado...');
+                chrome.tabs.sendMessage(tab.id, { action: 'PING' }, (response) => {
+                    if (chrome.runtime.lastError) {
+                        console.log('⚠️ APYSKY: Content script no responde, reinyectando...');
+                        chrome.scripting.executeScript({
+                            target: { tabId: tab.id },
+                            files: ['contentScript.js']
+                        }).catch(err => console.error('Error reinyectando script:', err));
+                    } else {
+                        console.log('✅ APYSKY: Content script está activo');
+                    }
+                });
+            }, 4000); // Más tiempo para que WhatsApp cargue completamente
+        });
 
         // Limpiar el timeout y la promesa si la pestaña se cierra o hay un error
         const cleanup = () => {
@@ -142,33 +233,30 @@ async function sendImage({ to, dataUrl, caption = '', delay }) {
     console.log('APYSKY: Preparando envío de imagen a:', to);
     const tab = await getOrCreateWhatsAppTab();
     
-    // Aplicar delay si se especifica
-    if (delay !== undefined) {
-        console.log(`APYSKY: Aplicando delay de ${delay}ms`);
-        await new Promise(r => setTimeout(r, delay));
-    } else if (state.delayBetweenImages > 0) {
-        console.log(`APYSKY: Aplicando delay entre imágenes: ${state.delayBetweenImages}ms`);
-        await new Promise(r => setTimeout(r, state.delayBetweenImages));
-    }
+    // ✅ DELAY AUMENTADO para permitir que WhatsApp cargue el nuevo chat
+    const imageDelay = delay !== undefined ? Math.max(delay, 4000) : Math.max(state.delayBetweenImages, 4000);
+    console.log(`🕐 APYSKY: Aplicando delay para cambio de chat: ${imageDelay}ms`);
+    await new Promise(r => setTimeout(r, imageDelay));
 
     // Navegar al chat del destinatario primero
     const url = `${WHATSAPP_WEB_URL}send?phone=${to}`;
     console.log(`APYSKY: Navegando al chat de ${to}`);
     await chrome.tabs.update(tab.id, { url, active: true });
     
-    // Esperar a que cargue la página
-    await new Promise(r => setTimeout(r, 1500));
+    // ✅ ESPERAR MÁS TIEMPO para que el nuevo chat cargue completamente
+    console.log('🕐 APYSKY: Esperando que el nuevo chat cargue completamente...');
+            await new Promise(r => setTimeout(r, 3000)); // ✅ Optimizado a 3 segundos
 
     return new Promise((resolve, reject) => {
         // Configurar timeout para el envío
         const timeoutId = setTimeout(() => {
-            if (state.currentSendingPromise) {
+            if (state.currentSendingPromise && state.currentSendingPromise.timeoutId === timeoutId) {
                 console.error('APYSKY: Timeout esperando la confirmación del envío de imagen');
                 const { reject: currentReject } = state.currentSendingPromise;
                 state.currentSendingPromise = null;
                 currentReject(new Error('Timeout esperando confirmación del envío de imagen'));
             }
-        }, 60000); // 60 segundos de timeout
+        }, 150000); // ✅ Aumentado a 150 segundos (2.5 minutos) para multi-sección
 
         // Guardar la promesa actual junto con el timeoutId
         state.currentSendingPromise = { resolve, reject, timeoutId };
@@ -190,7 +278,7 @@ async function sendImage({ to, dataUrl, caption = '', delay }) {
                     try {
                       console.log('APYSKY: Inyectando imagen…');
                   
-                     /* ────────────────── 1️⃣  ABRIR menú “Adjuntar” ────────────────── */
+                     /* ────────────────── 1️⃣  ABRIR menú "Adjuntar" ────────────────── */
 const CLIP_SELECTOR = [
     'span[data-icon="clip"]',                  // diseño clásico
     'span[data-icon="attach-menu-plus"]',      // rediseño 2024
@@ -204,7 +292,7 @@ const CLIP_SELECTOR = [
     const id = setInterval(() => {
       const el = document.querySelector(CLIP_SELECTOR);
       if (el) { clearInterval(id); ok(el); }
-      else if (Date.now() - t0 > 15_000) {     // ⬆ subimos timeout a 15 s
+      else if (Date.now() - t0 > 25_000) {     // ✅ Aumentado a 25s para segundo número
         clearInterval(id);
         fail(new Error('Timeout esperando botón Adjuntar'));
       }
@@ -219,7 +307,7 @@ const CLIP_SELECTOR = [
                         const id = setInterval(() => {
                           const el = document.querySelector('input[type="file"][accept*="image"]');
                           if (el) { clearInterval(id); ok(el); }
-                          else if (Date.now() - t0 > 5_000) {
+                          else if (Date.now() - t0 > 15_000) { // ✅ Aumentado a 15s para file input
                             clearInterval(id);
                             fail(new Error('Timeout esperando <input type=file>'));
                           }
@@ -248,8 +336,8 @@ const CLIP_SELECTOR = [
                   
 /* ────────────────── 3️⃣  LOCALIZAR + ENVIAR ────────────────── */
 
-const SEND_BTN_TIMEOUT = 15_000;   // 15 s máx.
-const POLL             =    250;   // cada 250 ms
+const SEND_BTN_TIMEOUT = 30_000;   // 15 s máx.
+const POLL             =    250;   // cada 250 ms
 
 const sendBtn = await new Promise((ok, fail) => {
   const t0 = Date.now();
@@ -258,7 +346,7 @@ const sendBtn = await new Promise((ok, fail) => {
     let el = document.querySelector('div[role="button"][aria-label="Enviar"]');
     if (el && el.offsetParent) return ok(el);
 
-    /* — 2. Icono interno “wds-ic-send-filled” (por si cambia aria-label) — */
+    /* — 2. Icono interno "wds-ic-send-filled" (por si cambia aria-label) — */
     const icon = document.querySelector('span[data-icon="wds-ic-send-filled"]');
     if (icon && icon.offsetParent) {
       el = icon.closest('[role="button"]') || icon.closest('button') || icon;
@@ -278,7 +366,7 @@ const sendBtn = await new Promise((ok, fail) => {
   probe();
 });
 
-/* clic normal; si falla, simulamos “Enter” */
+/* clic normal; si falla, simulamos "Enter" */
 try {
   sendBtn.click();
 } catch {
@@ -328,9 +416,17 @@ try {
 
 // Escuchar mensajes del content script
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    console.log('APYSKY: Mensaje recibido en background:', request);
+    // Solo logear acciones importantes (excluir checks de estado y gets)
+    const silentActions = ['CHECK_WHATSAPP_STATUS', 'GET_WHATSAPP_STATUS'];
+    if (!silentActions.includes(request.action)) {
+        console.log('APYSKY: Acción en background:', request.action);
+    }
 
     switch (request.action) {
+
+            
+
+
            /* ========= IMAGEN ENVIADA CORRECTAMENTE ========= */
            case 'UI_IMAGE_SUCCESS':
                console.log('APYSKY: Imagen enviada con éxito');
@@ -366,7 +462,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             case 'UI_SEND_SUCCESS':
                 if (state.currentSendingPromise) {
                     console.log("APYSKY: Recibido UI_SEND_SUCCESS del content script.");
-                    const { resolve } = state.currentSendingPromise;
+                    const { resolve, timeoutId } = state.currentSendingPromise;
+                    clearTimeout(timeoutId); // ✅ Cancelar timeout para evitar error falso
                     state.currentSendingPromise = null;
                     resolve("Mensaje enviado con éxito por UI.");
                 }
@@ -376,21 +473,44 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 case 'UI_SEND_FAILURE':
                     if (state.currentSendingPromise) {
                         console.error("APYSKY: Recibido UI_SEND_FAILURE del content script:", request.payload);
-                        const { reject } = state.currentSendingPromise;
+                        const { reject, timeoutId } = state.currentSendingPromise;
+                        if (timeoutId) clearTimeout(timeoutId); // ✅ Limpiar timeout en fallos también
                         state.currentSendingPromise = null;
                         reject(new Error(request.payload || "Fallo en el envío por UI reportado por content script."));
                     }
                     break;
         
         case 'GET_WHATSAPP_STATUS':
-             getOrCreateWhatsAppTab().then(tab => {
-                sendResponse({
-                    isWhatsAppReady: state.isWhatsAppReady,
-                    tabId: state.whatsappTabId,
-                    tabStatus: tab.status
-                });
-             });
-             return true;
+            (async () => {
+                try {
+                    // Cache del estado para evitar queries innecesarias
+                    const now = Date.now();
+                    if (state.lastStatusCheck && (now - state.lastStatusCheck) < 3000) {
+                        // Usar cache si la última verificación fue hace menos de 3 segundos
+                        sendResponse({
+                            tabId: state.whatsappTabId,
+                            isWhatsAppReady: state.isWhatsAppReady
+                        });
+                        return;
+                    }
+                    
+                    const tab = await getOrCreateWhatsAppTab();
+                    state.lastStatusCheck = now;
+                    
+                    sendResponse({
+                        isWhatsAppReady: state.isWhatsAppReady,
+                        tabId: state.whatsappTabId,
+                        tabStatus: tab.status
+                    });
+                } catch (error) {
+                    sendResponse({ 
+                        tabId: null, 
+                        isWhatsAppReady: false,
+                        error: error.message 
+                    });
+                }
+            })();
+            return true;
         
              case 'SEND_IMAGE':
                 (async () => {
@@ -415,11 +535,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 state.isWhatsAppReady = true;
              }
             break;
-
-            case 'GET_SCHEDULED_MESSAGES':
-// aún sin implementar – simplemente responde vacío
-sendResponse({ scheduled: [] });
-return true;
     }
     
     return false; // No hay respuesta asíncrona para los casos que no la devuelven explícitamente.
@@ -427,12 +542,32 @@ return true;
 });
 
 
+// ------------------- LIMPIEZA DE STORAGE -------------------
+
+// Función para limpiar datos obsoletos de mensajes programados
+async function cleanupScheduledMessagesStorage() {
+    try {
+        const result = await chrome.storage.local.get(['scheduledMessages']);
+        if (result.scheduledMessages && result.scheduledMessages.length > 0) {
+            console.log(`🧹 APYSKY: Limpiando ${result.scheduledMessages.length} mensajes programados obsoletos`);
+            await chrome.storage.local.remove(['scheduledMessages']);
+            console.log('✅ APYSKY: Storage de mensajes programados limpiado');
+        }
+    } catch (error) {
+        console.error('APYSKY: Error limpiando storage de mensajes programados:', error);
+    }
+}
+
+// Ejecutar limpieza al inicializar
+cleanupScheduledMessagesStorage();
+
 // ------------------- GESTIÓN DEL ESTADO DE LA PESTAÑA -------------------
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     if (tab.url && tab.url.includes(WHATSAPP_WEB_URL)) {
-        console.log(`APYSKY: Pestaña de WhatsApp Web actualizada: ${tabId}`, changeInfo.status);
+        // Solo logear cambios de estado importantes
         if (changeInfo.status === 'complete') {
+            console.log(`APYSKY: WhatsApp Web cargado completamente en pestaña ${tabId}`);
             state.isWhatsAppReady = true;
             state.whatsappTabId = tabId;
         }
