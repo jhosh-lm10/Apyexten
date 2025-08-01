@@ -17,10 +17,20 @@ const state = {
     messageQueue: [],
     isSending: false,
     currentSendingPromise: null,
-            delayBetweenMessages: 5000, // ✅ 5 segundos entre mensajes (optimizado)
+    delayBetweenMessages: 5000, // ✅ 5 segundos entre mensajes (optimizado)
     delayBetweenImages: 6000, // ✅ 6 segundos entre imágenes (optimizado)
     lastStatusCheck: 0 // Cache para verificaciones de estado
 };
+
+/**
+ * Espera a que la operación de envío actual termine antes de continuar
+ */
+async function waitUntilIdle() {
+    while (state.currentSendingPromise) {
+        // 200 ms de espera pasiva hasta que se libere
+        await new Promise(r => setTimeout(r, 200));
+    }
+}
 
 // ------------------- FUNCIONES DE PLANTILLAS -------------------
 
@@ -159,6 +169,7 @@ async function sendMessage(to, message) {
 }
 
 async function sendSingleMessage(to, message) {
+    await waitUntilIdle(); // Esperar a que cualquier operación anterior termine
     console.log(`🚀 APYSKY: Preparando envío de mensaje (UI) a: ${to}`);
     
     // El mensaje ya viene limpio desde el popup.
@@ -230,6 +241,7 @@ async function sendSingleMessage(to, message) {
  *  NUEVO  –  envía imagen + caption usando la UI de WhatsApp Web
  * ──────────────────────────────────────────────────────────────*/
 async function sendImage({ to, dataUrl, caption = '', delay }) {
+    await waitUntilIdle(); // Esperar a que cualquier operación anterior termine
     console.log('APYSKY: Preparando envío de imagen a:', to);
     const tab = await getOrCreateWhatsAppTab();
     
@@ -497,20 +509,20 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                     const tab = await getOrCreateWhatsAppTab();
                     state.lastStatusCheck = now;
                     
-                    sendResponse({
-                        isWhatsAppReady: state.isWhatsAppReady,
-                        tabId: state.whatsappTabId,
-                        tabStatus: tab.status
-                    });
+                sendResponse({
+                    isWhatsAppReady: state.isWhatsAppReady,
+                    tabId: state.whatsappTabId,
+                    tabStatus: tab.status
+                });
                 } catch (error) {
                     sendResponse({ 
                         tabId: null, 
                         isWhatsAppReady: false,
                         error: error.message 
-                    });
+             });
                 }
             })();
-            return true;
+             return true;
         
              case 'SEND_IMAGE':
                 (async () => {
