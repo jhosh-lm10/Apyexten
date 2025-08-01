@@ -20,11 +20,6 @@ export default defineConfig({
         {
           src: 'src/contentScript.js',
           dest: './'
-        },
-        // Copiar loader que se ejecuta en document_start
-        {
-          src: 'src/pageInjectLoader.js',
-          dest: './'
         }
       ]
     })
